@@ -6,31 +6,44 @@ import { PLATFORM_SPECS, type PlatformId } from '@/config/platforms';
 export const runtime = 'nodejs';
 
 const platformIds = new Set<PlatformId>(Object.keys(PLATFORM_SPECS) as PlatformId[]);
+type ProjectPlatform = PlatformId | 'custom';
 
 function validateProjectPatch(body: Record<string, unknown>) {
   const patch: Record<string, unknown> = {};
   if (typeof body.name === 'string') patch.name = body.name.trim().slice(0, 160) || 'Untitled project';
+
   const requestedPlatform = typeof body.platform === 'string' ? body.platform : undefined;
   if (requestedPlatform !== undefined) {
-    if (!platformIds.has(requestedPlatform as PlatformId)) return { error: 'Unsupported project platform' };
-    patch.platform = requestedPlatform;
-    if (requestedPlatform !== 'custom') {
-      patch.width = PLATFORM_SPECS[requestedPlatform as PlatformId].width;
-      patch.height = PLATFORM_SPECS[requestedPlatform as PlatformId].height;
+    const platform = requestedPlatform === 'custom' ? 'custom' : platformIds.has(requestedPlatform as PlatformId) ? requestedPlatform as PlatformId : null;
+    if (!platform) return { error: 'Unsupported project platform' };
+    patch.platform = platform;
+    if (platform !== 'custom') {
+      patch.width = PLATFORM_SPECS[platform].width;
+      patch.height = PLATFORM_SPECS[platform].height;
     }
   }
 
-  const platform = (patch.platform as PlatformId | undefined) ?? undefined;
   for (const key of ['width', 'height'] as const) {
     if (body[key] !== undefined && (typeof body[key] !== 'number' || !Number.isFinite(body[key]) || !Number.isInteger(body[key]))) {
       return { error: `${key} must be an integer` };
     }
-    if (typeof body[key] === 'number') patch[key] = Math.max(1, Math.min(10000, Math.floor(body[key])));
+    if (typeof body[key] === 'number') {
+      const value = Math.floor(body[key]);
+      if (value < 1 || value > 10000) return { error: `${key} must be between 1 and 10000` };
+      patch[key] = value;
+    }
   }
-  if (platform === 'custom' || platform === undefined) {
-    if (typeof patch.width === 'number' && typeof patch.height !== 'number') return { error: 'width and height must be provided together' };
-    if (typeof patch.height === 'number' && typeof patch.width !== 'number') return { error: 'width and height must be provided together' };
+
+  const requestedOrPatchedPlatform = patch.platform as ProjectPlatform | undefined;
+  const isCustom = requestedOrPatchedPlatform === 'custom';
+  if (isCustom) {
+    if (typeof patch.width !== 'number' || typeof patch.height !== 'number') {
+      return { error: 'Custom projects require both width and height' };
+    }
+  } else if (requestedOrPatchedPlatform === undefined && (typeof patch.width === 'number') !== (typeof patch.height === 'number')) {
+    return { error: 'width and height must be provided together' };
   }
+
   if (body.metadata !== undefined) {
     if (!body.metadata || typeof body.metadata !== 'object' || Array.isArray(body.metadata)) return { error: 'metadata must be an object' };
     patch.metadata = body.metadata;
