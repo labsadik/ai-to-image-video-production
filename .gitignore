@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+.env
+.env.local
+.env.*.local
+supabase/functions/.env
+.vercel
+coverage
+*.log
+.DS_Store
