@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
 
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const object = value as Record<string, unknown>;
+  return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(object[key])}`).join(',')}}`;
+}
+
 export function fingerprint(value: unknown): string {
-  const stable = JSON.stringify(value, Object.keys((value ?? {}) as object).sort());
-  return createHash('sha256').update(stable).digest('hex');
+  return createHash('sha256').update(stableStringify(value)).digest('hex');
 }
