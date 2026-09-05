@@ -1,5 +1,5 @@
 import { GENERATION_PLANS } from '@/config/plans';
-import { PROVIDER_CATALOG, type ProviderName, type QualityKey } from '@/config/providers';
+import { PROVIDER_CATALOG, type QualityKey } from '@/config/providers';
 
 export type GenerationQuality = QualityKey;
 export type Operation = 'generateImage' | 'editImage' | 'enhanceImage' | 'detectImage';
@@ -29,7 +29,7 @@ export interface ProviderResult {
 }
 
 export interface ProviderAdapter {
-  provider: ProviderName;
+  provider: string;
   generate(request: GenerationRequest & { model: string; apiKey: string }): Promise<ProviderResult>;
   healthCheck(apiKey: string): Promise<{ ok: boolean; latencyMs: number; message?: string }>;
 }

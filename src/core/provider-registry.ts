@@ -1,42 +1,19 @@
 import type { ProviderAdapter } from './ai';
-import { PROVIDER_CATALOG, type ProviderName } from '@/config/providers';
 import { GoogleGeminiAdapter } from './providers/google';
-
-export interface ProviderRuntime extends ProviderAdapter {
-  getSecret(): string;
-}
+import { HttpJsonProviderAdapter } from './providers/http-json';
+import type { RuntimeProviderConfig } from '@/server/provider-config';
 
 const GOOGLE_ADAPTER = new GoogleGeminiAdapter();
 
-const stubs: Partial<Record<ProviderName, ProviderRuntime>> = {};
-
-export const PROVIDER_ADAPTERS: Record<ProviderName, ProviderRuntime> = {
-  google: {
-    ...GOOGLE_ADAPTER,
-    getSecret() {
-      const value = process.env[PROVIDER_CATALOG.google.secretEnv];
-      if (!value) throw new Error(`Missing secret for provider google`);
-      return value;
-    },
-  },
-  openai: {
-    provider: 'openai',
-    getSecret() { throw new Error('OpenAI adapter is disabled'); },
-    async generate() { throw new Error('OpenAI adapter is disabled'); },
-    async healthCheck() { return { ok: false, latencyMs: 0, message: 'Provider disabled' }; },
-  },
-  anthropic: {
-    provider: 'anthropic',
-    getSecret() { throw new Error('Anthropic adapter is disabled'); },
-    async generate() { throw new Error('Anthropic adapter is disabled'); },
-    async healthCheck() { return { ok: false, latencyMs: 0, message: 'Provider disabled' }; },
-  },
-};
-
-void stubs;
-
-export function getProviderAdapter(name: ProviderName) {
-  const catalog = PROVIDER_CATALOG[name];
-  if (!catalog?.enabled) throw new Error(`Provider ${name} is disabled`);
-  return PROVIDER_ADAPTERS[name];
+export function getProviderAdapter(config: RuntimeProviderConfig): ProviderAdapter {
+  if (config.protocol === 'google_gemini') return GOOGLE_ADAPTER;
+  if (config.protocol === 'openai_images' || config.protocol === 'generic_json') {
+    return new HttpJsonProviderAdapter({
+      provider: config.provider,
+      baseUrl: config.baseUrl,
+      timeoutMs: config.timeoutMs,
+      requestConfig: config.requestConfig,
+    });
+  }
+  throw new Error(`Unsupported AI provider protocol: ${config.protocol}`);
 }

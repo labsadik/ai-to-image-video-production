@@ -1,9 +1,9 @@
 import 'server-only';
 
 import { getProviderAdapter } from '@/core/provider-registry';
-import { PROVIDER_CATALOG } from '@/config/providers';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { getProviderSecret } from '@/server/provider-secrets';
+import { resolveLiveProviderModel } from '@/server/provider-config';
 import { optimizeImage } from '@/lib/image/optimizer';
 import { applyWatermark } from '@/lib/image/watermark';
 
@@ -24,9 +24,12 @@ export async function processGenerationJob(jobId: string) {
   let creditsFinalized = false;
   try {
     const request = job.request as Record<string, unknown>;
-    const adapter = getProviderAdapter(job.provider);
-    const providerConfig = PROVIDER_CATALOG[job.provider as keyof typeof PROVIDER_CATALOG];
-    const apiKey = await getProviderSecret(job.provider, providerConfig.secretEnv);
+    const providerConfig = await resolveLiveProviderModel(job.plan_id, job.quality);
+    if (providerConfig.provider !== job.provider || providerConfig.model !== job.model) {
+      throw new Error(`Job route changed after enqueue; refusing stale provider/model ${job.provider}/${job.model}`);
+    }
+    const adapter = getProviderAdapter(providerConfig);
+    const apiKey = await getProviderSecret(providerConfig.provider, providerConfig.secretEnv);
     const result = await adapter.generate({
       userId: job.user_id,
       plan: (request.plan as 'free' | 'pro' | 'business') ?? 'free',
