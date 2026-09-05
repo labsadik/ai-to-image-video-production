@@ -31,6 +31,7 @@ export async function POST(request: Request) {
     const quality = body.quality as GenerationQuality;
     const operation = body.operation as Operation;
     const platform = body.platform as PlatformId | undefined;
+    const projectId = typeof body.projectId === 'string' ? body.projectId : undefined;
     if (!prompt || prompt.length > 8000 || !qualities.has(quality) || !operations.has(operation)) {
       return NextResponse.json({ error: 'Invalid generation request' }, { status: 400 });
     }
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
     const spec = platform ? PLATFORM_SPECS[platform] : { width: 1024, height: 1024, maxBytes: 8_000_000, mimeTypes: ['image/webp'] as const };
     const job = await createGenerationJob({
       userId: user.id,
+      projectId,
       plan: profile.plan as keyof typeof GENERATION_PLANS,
       operation: operation as Exclude<Operation, 'detectImage'>,
       prompt,
