@@ -1,11 +1,6 @@
+import { GoogleGenAI } from '@google/genai';
 import type { GenerationRequest, ProviderAdapter, ProviderResult } from '@/core/ai';
 import type { ProviderName } from '@/config/providers';
-
-interface GoogleInteractionResponse {
-  id?: string;
-  output_image?: { data?: string; mime_type?: string };
-  steps?: Array<{ type?: string; content?: Array<{ type?: string; data?: string; mime_type?: string }> }>;
-}
 
 function aspectRatio(width: number, height: number): string {
   const ratio = width / height;
@@ -17,7 +12,7 @@ function aspectRatio(width: number, height: number): string {
   return '1:1';
 }
 
-function imageSize(quality: GenerationRequest['quality']): string {
+function imageSize(quality: GenerationRequest['quality']): '1K' | '2K' | '4K' {
   if (quality === 'premium') return '4K';
   if (quality === 'standard') return '2K';
   return '1K';
@@ -27,64 +22,43 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
   provider: ProviderName = 'google';
 
   async generate(request: GenerationRequest & { model: string; apiKey: string }): Promise<ProviderResult> {
-    const input: Array<Record<string, unknown>> = [];
+    const ai = new GoogleGenAI({ apiKey: request.apiKey });
+    const parts: Array<Record<string, unknown>> = [{ text: request.prompt }];
     for (const image of request.referenceImages ?? []) {
-      input.push({ type: 'image', data: image.base64, mime_type: image.mimeType });
+      parts.push({ inlineData: { mimeType: image.mimeType, data: image.base64 } });
     }
-    input.push({ type: 'text', text: request.prompt });
 
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': request.apiKey,
-      },
-      body: JSON.stringify({
-        model: request.model,
-        input,
-        response_format: {
-          type: 'image',
-          aspect_ratio: aspectRatio(request.width, request.height),
-          image_size: imageSize(request.quality),
+    const response = await ai.models.generateContent({
+      model: request.model,
+      contents: [{ role: 'user', parts }],
+      config: {
+        responseModalities: ['IMAGE'],
+        responseFormat: {
+          image: {
+            aspectRatio: aspectRatio(request.width, request.height),
+            imageSize: imageSize(request.quality),
+          },
         },
-      }),
+      },
     });
 
-    const payload = (await response.json()) as GoogleInteractionResponse & { error?: { message?: string } };
-    if (!response.ok) throw new Error(payload.error?.message ?? `Google API failed with ${response.status}`);
-
-    if (payload.output_image?.data) {
-      return {
-        externalId: payload.id ?? crypto.randomUUID(),
-        mimeType: payload.output_image.mime_type ?? 'image/png',
-        base64: payload.output_image.data,
-      };
-    }
-
-    for (const step of payload.steps ?? []) {
-      for (const content of step.content ?? []) {
-        if (content.type === 'image' && content.data) {
-          return {
-            externalId: payload.id ?? crypto.randomUUID(),
-            mimeType: content.mime_type ?? 'image/png',
-            base64: content.data,
-          };
-        }
+    for (const part of response.candidates?.[0]?.content?.parts ?? []) {
+      if (part.thought) continue;
+      if (part.inlineData?.data) {
+        return { externalId: crypto.randomUUID(), mimeType: part.inlineData.mimeType ?? 'image/png', base64: part.inlineData.data };
       }
     }
-
-    throw new Error('Google API returned no image output');
+    throw new Error('Google Gemini returned no image output');
   }
 
   async healthCheck(apiKey: string) {
     const started = Date.now();
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
-      headers: { 'x-goog-api-key': apiKey },
-    });
-    return {
-      ok: response.ok,
-      latencyMs: Date.now() - started,
-      message: response.ok ? undefined : `Google models endpoint returned ${response.status}`,
-    };
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      await ai.models.get({ model: 'gemini-3.1-flash-image' });
+      return { ok: true, latencyMs: Date.now() - started };
+    } catch (error) {
+      return { ok: false, latencyMs: Date.now() - started, message: error instanceof Error ? error.message : 'Google health check failed' };
+    }
   }
 }
