@@ -2,7 +2,7 @@
   "name": "solamentis",
   "version": "0.2.0",
   "private": true,
-  "engines": { "node": ">=20.9.0" },
+  "engines": { "node": ">=22.0.0" },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
