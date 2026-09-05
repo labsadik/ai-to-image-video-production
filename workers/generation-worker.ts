@@ -1,7 +1,9 @@
 import 'server-only';
 
 import { getProviderAdapter } from '@/core/provider-registry';
+import { PROVIDER_CATALOG } from '@/config/providers';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
+import { getProviderSecret } from '@/server/provider-secrets';
 import { optimizeImage } from '@/lib/image/optimizer';
 import { applyWatermark } from '@/lib/image/watermark';
 
@@ -14,11 +16,14 @@ export async function processGenerationJob(jobId: string) {
   if (job.status === 'succeeded' || job.status === 'cancelled') return job;
 
   const request = job.request as Record<string, unknown>;
-  const update = await admin.from('generation_jobs').update({ status: 'processing', started_at: new Date().toISOString() }).eq('id', job.id).eq('status', 'queued');
-  if (update.error) throw new Error(`Unable to claim job: ${update.error.message}`);
+  const claim = await admin.from('generation_jobs').update({ status: 'processing', started_at: new Date().toISOString() }).eq('id', job.id).eq('status', 'queued');
+  if (claim.error) throw new Error(`Unable to claim job: ${claim.error.message}`);
+  if (!claim.data?.length) return job;
 
   try {
     const adapter = getProviderAdapter(job.provider);
+    const providerConfig = PROVIDER_CATALOG[job.provider as keyof typeof PROVIDER_CATALOG];
+    const apiKey = await getProviderSecret(job.provider, providerConfig.secretEnv);
     const result = await adapter.generate({
       userId: job.user_id,
       plan: (request.plan as 'free' | 'pro' | 'business') ?? 'free',
@@ -30,7 +35,7 @@ export async function processGenerationJob(jobId: string) {
       quality: job.quality as 'preview' | 'standard' | 'premium',
       referenceImages: Array.isArray(request.referenceImages) ? request.referenceImages as Array<{ mimeType: string; base64: string }> : [],
       model: job.model,
-      apiKey: adapter.getSecret(),
+      apiKey,
     });
 
     let outputBuffer = Buffer.from(result.base64, 'base64');
