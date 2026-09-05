@@ -76,7 +76,9 @@ function authHeaders(config: HttpJsonProviderConfig['requestConfig'], apiKey: st
 export class HttpJsonProviderAdapter implements ProviderAdapter {
   constructor(private readonly config: HttpJsonProviderConfig) {}
 
-  provider = this.config.provider;
+  get provider() {
+    return this.config.provider;
+  }
 
   async generate(request: GenerationRequest & { model: string; apiKey: string }): Promise<ProviderResult> {
     const cfg = this.config.requestConfig;
