@@ -1,8 +1,13 @@
 import { GENERATION_PLANS } from '@/config/plans';
-import { PROVIDER_CATALOG } from '@/config/providers';
+import { PROVIDER_CATALOG, type ProviderName, type QualityKey } from '@/config/providers';
 
-export type GenerationQuality = 'preview' | 'standard' | 'premium';
+export type GenerationQuality = QualityKey;
 export type Operation = 'generateImage' | 'editImage' | 'enhanceImage' | 'detectImage';
+
+export interface ReferenceImage {
+  mimeType: string;
+  base64: string;
+}
 
 export interface GenerationRequest {
   userId: string;
@@ -10,22 +15,33 @@ export interface GenerationRequest {
   operation: Exclude<Operation, 'detectImage'>;
   prompt: string;
   size: string;
+  width: number;
+  height: number;
   quality: GenerationQuality;
-  referenceAssetIds?: string[];
+  referenceImages?: ReferenceImage[];
+}
+
+export interface ProviderResult {
+  externalId: string;
+  mimeType: string;
+  base64: string;
+  providerMetadata?: Record<string, unknown>;
 }
 
 export interface ProviderAdapter {
-  provider: string;
-  generate(request: GenerationRequest & { model: string; apiKey: string }): Promise<{ externalId: string; outputUrl: string }>;
+  provider: ProviderName;
+  generate(request: GenerationRequest & { model: string; apiKey: string }): Promise<ProviderResult>;
+  healthCheck(apiKey: string): Promise<{ ok: boolean; latencyMs: number; message?: string }>;
 }
 
 export function resolveModel(plan: GenerationRequest['plan'], quality: GenerationQuality) {
   const planConfig = GENERATION_PLANS[plan];
-  const providerName = planConfig.models[quality].provider;
-  const model = planConfig.models[quality].model;
-  const provider = PROVIDER_CATALOG[providerName];
-  if (!provider || !provider.enabled) throw new Error(`No enabled provider configured for ${providerName}`);
-  return { providerName, model, secretEnv: provider.secretEnv };
+  const route = planConfig.models[quality];
+  const provider = PROVIDER_CATALOG[route.provider];
+  if (!provider?.enabled) throw new Error(`No enabled provider configured for ${route.provider}`);
+  const model = provider.models[route.tier];
+  if (!model) throw new Error(`No model configured for ${route.provider}:${route.tier}`);
+  return { providerName: route.provider, model, secretEnv: provider.secretEnv };
 }
 
 export function requiredCredits(plan: GenerationRequest['plan'], quality: GenerationQuality) {
