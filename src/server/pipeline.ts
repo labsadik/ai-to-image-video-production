@@ -1,8 +1,9 @@
 import { GENERATION_PLANS } from '@/config/plans';
 import { PLATFORM_SPECS, type PlatformId } from '@/config/platforms';
 import { requiredCredits, type GenerationRequest } from '@/core/ai';
-import { PolicySafetyEngine, type SafetyResult } from '@/core/safety';
+import { PolicySafetyEngine, SafetyPolicyViolation, type SafetyResult } from '@/core/safety';
 import { resolveLiveProviderModel } from './provider-config';
+import { getActiveSafetyPolicyVersion } from './safety-events';
 
 const safety = new PolicySafetyEngine();
 
@@ -19,8 +20,12 @@ export interface PlannedGeneration {
 }
 
 export async function planGeneration(request: GenerationRequest & { platform?: PlatformId }): Promise<PlannedGeneration> {
-  const safetyResult = await safety.check({ prompt: request.prompt, assetUrls: [] });
-  if (safetyResult.decision !== 'allow') throw new Error(`Safety decision: ${safetyResult.decision}`);
+  const [safetyResult, policyVersion] = await Promise.all([
+    safety.check({ prompt: request.prompt, assetUrls: [] }),
+    getActiveSafetyPolicyVersion(),
+  ]);
+  safetyResult.policyVersion = policyVersion;
+  if (safetyResult.decision !== 'allow') throw new SafetyPolicyViolation(safetyResult);
 
   const route = await resolveLiveProviderModel(request.plan, request.quality);
   const plan = GENERATION_PLANS[request.plan];
