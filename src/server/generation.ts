@@ -1,4 +1,5 @@
 import { fingerprint } from '@/lib/security/fingerprint';
+import { SafetyPolicyViolation } from '@/core/safety';
 import { planGeneration } from './pipeline';
 import { recordSafetyEvent } from './safety-events';
 import { getSupabaseAdmin } from './supabase-admin';
@@ -14,7 +15,15 @@ export async function createGenerationJob(input: GenerationRequest & { platform?
   }
 
   const idempotencyKey = input.idempotencyKey ?? fingerprint({ userId: input.userId, projectId: input.projectId, prompt: input.prompt, operation: input.operation, size: input.size, width: input.width, height: input.height, quality: input.quality, platform: input.platform });
-  const planned = await planGeneration(input);
+  let planned;
+  try {
+    planned = await planGeneration(input);
+  } catch (error) {
+    if (error instanceof SafetyPolicyViolation) {
+      await recordSafetyEvent({ userId: input.userId, stage: 'prompt_validation', decision: error.decision, reasons: error.reasons, score: error.decision === 'block' ? 1 : 0.5, policyVersion: error.policyVersion });
+    }
+    throw error;
+  }
 
   const { data: existing } = await admin.from('generation_jobs').select('*').eq('user_id', input.userId).eq('idempotency_key', idempotencyKey).maybeSingle();
   if (existing) return existing;
