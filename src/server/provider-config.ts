@@ -24,25 +24,30 @@ export interface RuntimeProviderConfig {
 
 export async function resolveLiveProviderModel(planId: string, quality: QualityKey): Promise<RuntimeProviderConfig> {
   const admin = getSupabaseAdmin();
-  const { data, error } = await admin
+  const { data: route, error: routeError } = await admin
     .from('ai_plan_routes')
-    .select('enabled, provider_id, model_id, ai_providers!inner(id, enabled, secret_env, base_url, protocol, request_config, timeout_ms), ai_models!inner(model_key, enabled)')
+    .select('enabled, provider_id, model_id')
     .eq('plan_id', planId)
     .eq('quality', quality)
     .maybeSingle();
+  if (routeError) throw new Error(`AI route lookup failed: ${routeError.message}`);
+  if (!route?.enabled) throw new Error(`No active AI route for plan=${planId}, quality=${quality}`);
 
-  if (!error && data?.enabled && data.ai_providers?.enabled && data.ai_models?.enabled) {
-    const provider = data.ai_providers as Record<string, unknown>;
-    return {
-      provider: String(provider.id),
-      protocol: String(provider.protocol) as ProviderProtocol,
-      baseUrl: String(provider.base_url ?? ''),
-      secretEnv: String(provider.secret_env),
-      model: String(data.ai_models.model_key),
-      timeoutMs: Number(provider.timeout_ms ?? 120000),
-      requestConfig: (provider.request_config ?? {}) as RuntimeProviderConfig['requestConfig'],
-    };
-  }
+  const [{ data: provider, error: providerError }, { data: model, error: modelError }] = await Promise.all([
+    admin.from('ai_providers').select('id,enabled,secret_env,base_url,protocol,request_config,timeout_ms').eq('id', route.provider_id).maybeSingle(),
+    admin.from('ai_models').select('id,provider_id,model_key,enabled').eq('id', route.model_id).maybeSingle(),
+  ]);
+  if (providerError) throw new Error(`AI provider lookup failed: ${providerError.message}`);
+  if (modelError) throw new Error(`AI model lookup failed: ${modelError.message}`);
+  if (!provider?.enabled || !model?.enabled || model.provider_id !== provider.id) throw new Error(`AI provider/model is disabled or mismatched for ${planId}/${quality}`);
 
-  throw new Error(`No active AI route for plan=${planId}, quality=${quality}`);
+  return {
+    provider: provider.id,
+    protocol: provider.protocol as ProviderProtocol,
+    baseUrl: provider.base_url ?? '',
+    secretEnv: provider.secret_env,
+    model: model.model_key,
+    timeoutMs: Number(provider.timeout_ms ?? 120000),
+    requestConfig: (provider.request_config ?? {}) as RuntimeProviderConfig['requestConfig'],
+  };
 }
