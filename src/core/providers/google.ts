@@ -49,11 +49,11 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
     throw new Error('Google Gemini returned no image output');
   }
 
-  async healthCheck(apiKey: string) {
+  async healthCheck(apiKey: string, model = 'gemini-3.1-flash-image') {
     const started = Date.now();
     try {
       const ai = new GoogleGenAI({ apiKey });
-      await ai.models.get({ model: 'gemini-3.1-flash-image' });
+      await ai.models.get({ model });
       return { ok: true, latencyMs: Date.now() - started };
     } catch (error) {
       return { ok: false, latencyMs: Date.now() - started, message: error instanceof Error ? error.message : 'Google health check failed' };
