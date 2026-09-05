@@ -36,10 +36,6 @@ export async function POST(request: Request) {
     if (!prompt || prompt.length > 8000 || !qualities.has(quality) || !operations.has(operation)) {
       return NextResponse.json({ error: 'Invalid generation request' }, { status: 400 });
     }
-    if (quality === 'premium') {
-      const rawPlan = body.plan;
-      void rawPlan;
-    }
     if (platform && !(platform in PLATFORM_SPECS)) return NextResponse.json({ error: 'Unsupported platform' }, { status: 400 });
 
     const admin = getSupabaseAdmin();
