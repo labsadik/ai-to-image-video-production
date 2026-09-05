@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/server/supabase';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { createGenerationJob } from '@/server/generation';
+import { consumeRateLimit } from '@/server/rate-limit';
 import { GENERATION_PLANS } from '@/config/plans';
 import { PLATFORM_SPECS, type PlatformId } from '@/config/platforms';
 import type { GenerationQuality, Operation } from '@/core/ai';
@@ -17,12 +18,23 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    const rate = await consumeRateLimit(`user:${user.id}:generation`, 20, 60);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: 'Generation rate limit exceeded', retryAfterSeconds: rate.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } },
+      );
+    }
+
     const body = await request.json() as Record<string, unknown>;
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     const quality = body.quality as GenerationQuality;
     const operation = body.operation as Operation;
     const platform = body.platform as PlatformId | undefined;
-    if (!prompt || !qualities.has(quality) || !operations.has(operation)) return NextResponse.json({ error: 'Invalid generation request' }, { status: 400 });
+    const projectId = typeof body.projectId === 'string' ? body.projectId : undefined;
+    if (!prompt || prompt.length > 8000 || !qualities.has(quality) || !operations.has(operation)) {
+      return NextResponse.json({ error: 'Invalid generation request' }, { status: 400 });
+    }
     if (platform && !(platform in PLATFORM_SPECS)) return NextResponse.json({ error: 'Unsupported platform' }, { status: 400 });
 
     const admin = getSupabaseAdmin();
@@ -32,6 +44,7 @@ export async function POST(request: Request) {
     const spec = platform ? PLATFORM_SPECS[platform] : { width: 1024, height: 1024, maxBytes: 8_000_000, mimeTypes: ['image/webp'] as const };
     const job = await createGenerationJob({
       userId: user.id,
+      projectId,
       plan: profile.plan as keyof typeof GENERATION_PLANS,
       operation: operation as Exclude<Operation, 'detectImage'>,
       prompt,

@@ -3,12 +3,26 @@ import 'server-only';
 import { getProviderAdapter } from '@/core/provider-registry';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { getProviderSecret } from '@/server/provider-secrets';
-import { resolveLiveProviderModel } from '@/server/provider-config';
+import { resolveLiveProviderModel, resolveProviderConfig } from '@/server/provider-config';
 import { optimizeImage } from '@/lib/image/optimizer';
 import { applyWatermark } from '@/lib/image/watermark';
 
 interface QueueMessage { job_id: string }
 const MAX_ATTEMPTS = 3;
+
+async function markProviderHealth(providerId: string, ok: boolean, latencyMs?: number, message?: string) {
+  const admin = getSupabaseAdmin();
+  const { data: provider } = await admin.from('ai_providers').select('health_failures').eq('id', providerId).maybeSingle();
+  const failures = ok ? 0 : Number(provider?.health_failures ?? 0) + 1;
+  await admin.from('ai_providers').update({
+    health_status: ok ? 'healthy' : 'unhealthy',
+    health_checked_at: new Date().toISOString(),
+    health_latency_ms: latencyMs ?? null,
+    health_message: message ?? null,
+    health_failures: failures,
+  }).eq('id', providerId);
+  await admin.from('provider_health_events').insert({ provider_id: providerId, ok, latency_ms: latencyMs ?? null, message: message ?? null, capabilities: {} });
+}
 
 export async function processGenerationJob(jobId: string) {
   const admin = getSupabaseAdmin();
@@ -25,25 +39,54 @@ export async function processGenerationJob(jobId: string) {
   try {
     const request = job.request as Record<string, unknown>;
     const planId = String(request.plan ?? 'free');
-    const providerConfig = await resolveLiveProviderModel(planId, job.quality);
-    if (providerConfig.provider !== job.provider || providerConfig.model !== job.model) {
-      throw new Error(`Job route changed after enqueue; refusing stale provider/model ${job.provider}/${job.model}`);
+    const route = await resolveLiveProviderModel(planId, job.quality);
+    if (route.provider !== job.provider || route.model !== job.model) throw new Error(`Job route changed after enqueue; refusing stale provider/model ${job.provider}/${job.model}`);
+
+    const candidates = [{ provider: route.provider, model: route.model, protocol: route.protocol, config: route }];
+    if (route.fallbackProviderId && route.fallbackModelId && (route.fallbackProviderId !== route.provider || route.fallbackModelId !== route.model)) {
+      try {
+        const fallback = await resolveProviderConfig(route.fallbackProviderId, route.fallbackModelId);
+        candidates.push({ provider: fallback.provider, model: fallback.model, protocol: fallback.protocol, config: fallback });
+      } catch (fallbackError) {
+        console.warn('Fallback provider configuration unavailable', fallbackError);
+      }
     }
-    const adapter = getProviderAdapter(providerConfig);
-    const apiKey = await getProviderSecret(providerConfig.provider, providerConfig.secretEnv);
-    const result = await adapter.generate({
-      userId: job.user_id,
-      plan: planId as 'free' | 'pro' | 'business',
-      operation: job.operation as 'generateImage' | 'editImage' | 'enhanceImage',
-      prompt: job.prompt,
-      size: job.size,
-      width: Number(request.width ?? 1024),
-      height: Number(request.height ?? 1024),
-      quality: job.quality as 'preview' | 'standard' | 'premium',
-      referenceImages: Array.isArray(request.referenceImages) ? request.referenceImages as Array<{ mimeType: string; base64: string }> : [],
-      model: job.model,
-      apiKey,
-    });
+
+    let result: Awaited<ReturnType<ReturnType<typeof getProviderAdapter>['generate']>> | null = null;
+    let actualProvider = route.provider;
+    let actualModel = route.model;
+    let lastProviderError: unknown = null;
+
+    for (const candidate of candidates) {
+      try {
+        const adapter = getProviderAdapter(candidate.config);
+        const apiKey = await getProviderSecret(candidate.provider, candidate.config.secretEnv);
+        const started = Date.now();
+        const generated = await adapter.generate({
+          userId: job.user_id,
+          plan: planId as 'free' | 'pro' | 'business',
+          operation: job.operation as 'generateImage' | 'editImage' | 'enhanceImage',
+          prompt: job.prompt,
+          size: job.size,
+          width: Number(request.width ?? 1024),
+          height: Number(request.height ?? 1024),
+          quality: job.quality as 'preview' | 'standard' | 'premium',
+          referenceImages: Array.isArray(request.referenceImages) ? request.referenceImages as Array<{ mimeType: string; base64: string }> : [],
+          model: candidate.model,
+          apiKey,
+        });
+        await markProviderHealth(candidate.provider, true, Date.now() - started);
+        result = generated;
+        actualProvider = candidate.provider;
+        actualModel = candidate.model;
+        break;
+      } catch (providerError) {
+        lastProviderError = providerError;
+        await markProviderHealth(candidate.provider, false, undefined, providerError instanceof Error ? providerError.message : 'provider generation failed');
+      }
+    }
+
+    if (!result) throw lastProviderError instanceof Error ? lastProviderError : new Error('All configured AI providers failed');
 
     let outputBuffer = Buffer.from(result.base64, 'base64');
     if (Boolean(request.watermark)) outputBuffer = await applyWatermark(outputBuffer);
@@ -66,7 +109,7 @@ export async function processGenerationJob(jobId: string) {
       width: Number(request.width ?? 1024),
       height: Number(request.height ?? 1024),
       status: 'ready',
-      metadata: { job_id: job.id, provider: job.provider, model: job.model, external_id: result.externalId, variants: variants.map(v => ({ variant: v.variant, path: `${base}/${v.variant}.webp`, bytes: v.byteSize })) },
+      metadata: { job_id: job.id, provider: actualProvider, model: actualModel, primary_provider: job.provider, primary_model: job.model, external_id: result.externalId, variants: variants.map(v => ({ variant: v.variant, path: `${base}/${v.variant}.webp`, bytes: v.byteSize })) },
     }).select('id').single();
     if (assetError || !asset) throw new Error(assetError?.message ?? 'Failed to persist generated asset');
 
@@ -77,12 +120,13 @@ export async function processGenerationJob(jobId: string) {
     if (finalizeError) throw new Error(`Credit finalization failed: ${finalizeError.message}`);
     creditsFinalized = true;
 
-    const { data: completed, error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', output_path: `${base}/export.webp`, external_job_id: result.externalId, completed_at: new Date().toISOString() }).eq('id', job.id).select('*').single();
+    const { data: completed, error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', output_path: `${base}/export.webp`, external_job_id: result.externalId, completed_at: new Date().toISOString(), request: { ...(request ?? {}), actualProvider, actualModel } }).eq('id', job.id).select('*').single();
     if (completeError) throw new Error(`Job completion failed: ${completeError.message}`);
     return completed ?? job;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Generation worker failed';
     const currentAttempts = Number((job.request as Record<string, unknown>)?.attempts ?? 0) + 1;
+    await admin.from('job_failures').insert({ job_id: job.id, attempt: currentAttempts, error_code: 'GENERATION_ATTEMPT_FAILED', error_message: message, provider_id: job.provider, model_key: job.model });
     if (creditsFinalized || currentAttempts >= MAX_ATTEMPTS) {
       if (!creditsFinalized) await admin.rpc('refund_generation_credits', { p_user_id: job.user_id, p_amount: job.reserved_credits, p_idempotency_key: job.idempotency_key });
       await admin.from('generation_jobs').update({ status: 'failed', error_code: 'GENERATION_FAILED', error_message: message, completed_at: new Date().toISOString(), request: { ...(job.request ?? {}), attempts: currentAttempts, last_error: message } }).eq('id', job.id);
