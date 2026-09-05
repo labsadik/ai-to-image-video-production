@@ -27,7 +27,9 @@ export async function planGeneration(request: GenerationRequest & { platform?: P
   const platform = request.platform ? PLATFORM_SPECS[request.platform] : undefined;
 
   return {
-    ...route,
+    providerName: route.provider,
+    model: route.model,
+    secretEnv: route.secretEnv,
     credits: requiredCredits(request.plan, request.quality),
     watermark: plan.watermark,
     width: platform?.width ?? request.width,
