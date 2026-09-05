@@ -6,9 +6,18 @@ import { getProviderSecret } from '@/server/provider-secrets';
 import { resolveLiveProviderModel, resolveProviderConfig } from '@/server/provider-config';
 import { optimizeImage } from '@/lib/image/optimizer';
 import { applyWatermark } from '@/lib/image/watermark';
+import type { ProviderResult } from '@/core/ai';
 
 interface QueueMessage { job_id: string }
 const MAX_ATTEMPTS = 3;
+
+function isRetryableProviderError(error: unknown): boolean {
+  if (!(error instanceof Error)) return true;
+  const message = error.message.toLowerCase();
+  if (message.includes('aborted') || message.includes('timeout') || message.includes('timed out')) return true;
+  const status = message.match(/\bhttp\s+(429|500|502|503|504)\b/);
+  return Boolean(status);
+}
 
 async function markProviderHealth(providerId: string, ok: boolean, latencyMs?: number, message?: string) {
   const admin = getSupabaseAdmin();
@@ -42,17 +51,17 @@ export async function processGenerationJob(jobId: string) {
     const route = await resolveLiveProviderModel(planId, job.quality);
     if (route.provider !== job.provider || route.model !== job.model) throw new Error(`Job route changed after enqueue; refusing stale provider/model ${job.provider}/${job.model}`);
 
-    const candidates = [{ provider: route.provider, model: route.model, protocol: route.protocol, config: route }];
+    const candidates = [{ provider: route.provider, model: route.model, config: route }];
     if (route.fallbackProviderId && route.fallbackModelId && (route.fallbackProviderId !== route.provider || route.fallbackModelId !== route.model)) {
       try {
         const fallback = await resolveProviderConfig(route.fallbackProviderId, route.fallbackModelId);
-        candidates.push({ provider: fallback.provider, model: fallback.model, protocol: fallback.protocol, config: fallback });
+        candidates.push({ provider: fallback.provider, model: fallback.model, config: fallback });
       } catch (fallbackError) {
         console.warn('Fallback provider configuration unavailable', fallbackError);
       }
     }
 
-    let result: Awaited<ReturnType<ReturnType<typeof getProviderAdapter>['generate']>> | null = null;
+    let result: ProviderResult | null = null;
     let actualProvider = route.provider;
     let actualModel = route.model;
     let lastProviderError: unknown = null;
@@ -82,7 +91,9 @@ export async function processGenerationJob(jobId: string) {
         break;
       } catch (providerError) {
         lastProviderError = providerError;
-        await markProviderHealth(candidate.provider, false, undefined, providerError instanceof Error ? providerError.message : 'provider generation failed');
+        const retryable = isRetryableProviderError(providerError);
+        if (retryable) await markProviderHealth(candidate.provider, false, undefined, providerError instanceof Error ? providerError.message : 'provider generation failed');
+        if (!retryable) break;
       }
     }
 
@@ -102,6 +113,7 @@ export async function processGenerationJob(jobId: string) {
     const exportVariant = variants.find(v => v.variant === 'export');
     const { data: asset, error: assetError } = await admin.from('assets').upsert({
       user_id: job.user_id,
+      project_id: job.project_id ?? null,
       kind: 'generation',
       storage_path: `${base}/export.webp`,
       mime_type: 'image/webp',
