@@ -16,6 +16,8 @@ export interface SafetyEngine {
   check(input: SafetyInput): Promise<SafetyResult>;
 }
 
+export const ACTIVE_SAFETY_POLICY_VERSION = 1;
+
 const BLOCK_PATTERNS: RegExp[] = [
   /\b(child|minor|underage)\b.{0,80}\b(sex|sexual|nude|naked|porn|erotic)\b/i,
   /\b(sex|sexual|nude|naked|porn|erotic)\b.{0,80}\b(child|minor|underage)\b/i,
@@ -31,7 +33,19 @@ const REVIEW_PATTERNS: RegExp[] = [
   /\bextreme violence\b/i,
 ];
 
-export const ACTIVE_SAFETY_POLICY_VERSION = 1;
+export class SafetyPolicyViolation extends Error {
+  readonly decision: SafetyDecision;
+  readonly reasons: string[];
+  readonly policyVersion: number;
+
+  constructor(result: SafetyResult) {
+    super(`Safety decision: ${result.decision}`);
+    this.name = 'SafetyPolicyViolation';
+    this.decision = result.decision;
+    this.reasons = result.reasons;
+    this.policyVersion = result.policyVersion;
+  }
+}
 
 export class PolicySafetyEngine implements SafetyEngine {
   async check(input: SafetyInput): Promise<SafetyResult> {
