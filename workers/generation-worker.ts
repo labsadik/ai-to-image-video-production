@@ -24,7 +24,8 @@ export async function processGenerationJob(jobId: string) {
   let creditsFinalized = false;
   try {
     const request = job.request as Record<string, unknown>;
-    const providerConfig = await resolveLiveProviderModel(job.plan_id, job.quality);
+    const planId = String(request.plan ?? 'free');
+    const providerConfig = await resolveLiveProviderModel(planId, job.quality);
     if (providerConfig.provider !== job.provider || providerConfig.model !== job.model) {
       throw new Error(`Job route changed after enqueue; refusing stale provider/model ${job.provider}/${job.model}`);
     }
@@ -32,7 +33,7 @@ export async function processGenerationJob(jobId: string) {
     const apiKey = await getProviderSecret(providerConfig.provider, providerConfig.secretEnv);
     const result = await adapter.generate({
       userId: job.user_id,
-      plan: (request.plan as 'free' | 'pro' | 'business') ?? 'free',
+      plan: planId as 'free' | 'pro' | 'business',
       operation: job.operation as 'generateImage' | 'editImage' | 'enhanceImage',
       prompt: job.prompt,
       size: job.size,
