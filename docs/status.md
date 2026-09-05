@@ -10,17 +10,25 @@
 - Provider protocol/base URL/request/response mapping stored in Supabase
 - Provider/model/API-key switching through configuration/admin API without rewriting application code for supported protocols
 - Runtime route resolution from the captured generation job plan
+- Configured fallback-provider routing for provider failures
+- Persistent provider health status and health history
 - Authenticated generation endpoint
+- Atomic per-user generation rate limiting
 - Transactional credit reserve/finalize/refund contracts
 - Idempotent generation jobs
 - Supabase durable generation queue
 - Protected queue worker endpoint and Vercel cron trigger
+- Protected provider-health endpoint and scheduled health checks
+- Durable job-failure records
 - Supabase Vault provider-secret fallback
 - Signed private upload issuance
 - Uploaded-image structural validation
 - Private signed download URLs
 - Sharp-based preview/editor/export resizing and compression
 - Free-plan watermark compositing
+- Project creation/list/detail/update/delete APIs
+- Generation jobs linked to owned projects
+- Project-scoped asset and generation history retrieval
 - Minimal login/signup/create UI
 - Server-side admin provider and AI-route configuration endpoints
 - Audit-log writes for provider configuration changes
@@ -31,14 +39,15 @@
 
 - Production image moderation/classification for uploaded, reference, and generated images
 - Runtime loading and persistence of safety decisions at every pipeline stage
-- Provider health/capability discovery with persistent health state and automatic failover
-- Full retry/dead-letter operational policy, backoff, and alerting
+- Provider capability discovery beyond basic health checks
+- Operational retry backoff/dead-letter queue and alerting
 - Production billing checkout, subscriptions, entitlements, renewals, cancellations, and signed webhook replay protection
 - Detector implementation
-- Full projects/history/editor/canvas workflows
+- Full editor/canvas workflows
+- Full templates and brand-kit workflows
 - Full admin UI for providers, models, routes, safety, plans, users, and audit history
-- Rate limits and abuse prevention enforcement
-- Observability dashboards, metrics, tracing, alerts, and error tracking
+- IP/account/upload/API abuse controls beyond the current generation limiter
+- Full observability dashboards, metrics, tracing, alerts, and error tracking
 - Comprehensive unit/integration/e2e/security/safety/concurrency test suite
 - Production secrets configured and verified
 - Vercel/Supabase production deployment and end-to-end smoke test with a real provider key
