@@ -1,28 +1,39 @@
-import type { GenerationRequest, ProviderAdapter } from './ai';
+import type { ProviderAdapter } from './ai';
 import { PROVIDER_CATALOG, type ProviderName } from '@/config/providers';
+import { GoogleGeminiAdapter } from './providers/google';
 
 export interface ProviderRuntime extends ProviderAdapter {
   getSecret(): string;
 }
 
-const notImplemented = (name: string): ProviderRuntime => ({
-  provider: name,
-  getSecret() {
-    const entry = PROVIDER_CATALOG[name as ProviderName];
-    const value = process.env[entry?.secretEnv ?? ''];
-    if (!value) throw new Error(`Missing secret for provider ${name}`);
-    return value;
-  },
-  async generate(_request: GenerationRequest & { model: string; apiKey: string }) {
-    throw new Error(`Adapter not implemented for provider ${name}`);
-  },
-});
+const GOOGLE_ADAPTER = new GoogleGeminiAdapter();
+
+const stubs: Partial<Record<ProviderName, ProviderRuntime>> = {};
 
 export const PROVIDER_ADAPTERS: Record<ProviderName, ProviderRuntime> = {
-  google: notImplemented('google'),
-  openai: notImplemented('openai'),
-  anthropic: notImplemented('anthropic'),
+  google: {
+    ...GOOGLE_ADAPTER,
+    getSecret() {
+      const value = process.env[PROVIDER_CATALOG.google.secretEnv];
+      if (!value) throw new Error(`Missing secret for provider google`);
+      return value;
+    },
+  },
+  openai: {
+    provider: 'openai',
+    getSecret() { throw new Error('OpenAI adapter is disabled'); },
+    async generate() { throw new Error('OpenAI adapter is disabled'); },
+    async healthCheck() { return { ok: false, latencyMs: 0, message: 'Provider disabled' }; },
+  },
+  anthropic: {
+    provider: 'anthropic',
+    getSecret() { throw new Error('Anthropic adapter is disabled'); },
+    async generate() { throw new Error('Anthropic adapter is disabled'); },
+    async healthCheck() { return { ok: false, latencyMs: 0, message: 'Provider disabled' }; },
+  },
 };
+
+void stubs;
 
 export function getProviderAdapter(name: ProviderName) {
   const catalog = PROVIDER_CATALOG[name];
