@@ -31,7 +31,7 @@ export interface ProviderResult {
 export interface ProviderAdapter {
   provider: string;
   generate(request: GenerationRequest & { model: string; apiKey: string }): Promise<ProviderResult>;
-  healthCheck(apiKey: string): Promise<{ ok: boolean; latencyMs: number; message?: string }>;
+  healthCheck(apiKey: string, model?: string): Promise<{ ok: boolean; latencyMs: number; message?: string }>;
 }
 
 export function resolveModel(plan: GenerationRequest['plan'], quality: GenerationQuality) {
