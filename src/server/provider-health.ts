@@ -10,7 +10,7 @@ export async function checkProvider(providerId: string, modelId: string) {
   const config = await resolveProviderConfig(providerId, modelId);
   const apiKey = await getProviderSecret(providerId, config.secretEnv);
   const adapter = getProviderAdapter(config);
-  const result = await adapter.healthCheck(apiKey);
+  const result = await adapter.healthCheck(apiKey, config.model);
   await admin.from('provider_health_events').insert({ provider_id: providerId, ok: result.ok, latency_ms: result.latencyMs, message: result.message, capabilities: {} });
   await admin.from('ai_providers').update({
     health_status: result.ok ? 'healthy' : 'unhealthy',
