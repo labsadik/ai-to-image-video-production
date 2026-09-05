@@ -8,6 +8,7 @@ export interface HttpJsonProviderConfig {
   timeoutMs: number;
   requestConfig: {
     path?: string;
+    healthPath?: string;
     method?: string;
     auth?: 'bearer' | 'api-key' | 'custom' | 'none';
     authHeader?: string;
@@ -49,9 +50,9 @@ function placeholder(name: string, request: GenerationRequest & { model: string 
 
 function renderTemplate(value: unknown, request: GenerationRequest & { model: string }): unknown {
   if (typeof value === 'string') {
-    const exact = value.match(/^\\{\\{([a-zA-Z0-9_]+)\\}\\}$/);
+    const exact = value.match(/^\{\{([a-zA-Z0-9_]+)\}\}$/);
     if (exact) return placeholder(exact[1], request);
-    return value.replace(/\\{\\{([a-zA-Z0-9_]+)\\}\\}/g, (_, name: string) => String(placeholder(name, request)));
+    return value.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, name: string) => String(placeholder(name, request)));
   }
   if (Array.isArray(value)) return value.map(item => renderTemplate(item, request));
   if (value && typeof value === 'object') {
@@ -61,7 +62,15 @@ function renderTemplate(value: unknown, request: GenerationRequest & { model: st
 }
 
 function joinUrl(baseUrl: string, path = '') {
-  return `${baseUrl.replace(/\\/$/, '')}/${path.replace(/^\\//, '')}`;
+  return `${baseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+}
+
+function authHeaders(config: HttpJsonProviderConfig['requestConfig'], apiKey: string): Record<string, string> {
+  const headers: Record<string, string> = { 'content-type': 'application/json', ...(config.headers ?? {}) };
+  if (config.auth === 'bearer') headers.authorization = `Bearer ${apiKey}`;
+  else if (config.auth === 'api-key') headers['x-api-key'] = apiKey;
+  else if (config.auth === 'custom') headers[config.authHeader ?? 'authorization'] = apiKey;
+  return headers;
 }
 
 export class HttpJsonProviderAdapter implements ProviderAdapter {
@@ -71,21 +80,12 @@ export class HttpJsonProviderAdapter implements ProviderAdapter {
 
   async generate(request: GenerationRequest & { model: string; apiKey: string }): Promise<ProviderResult> {
     const cfg = this.config.requestConfig;
-    const headers: Record<string, string> = {
-      'content-type': 'application/json',
-      ...(cfg.headers ?? {}),
-    };
-
-    if (cfg.auth === 'bearer') headers.authorization = `Bearer ${request.apiKey}`;
-    else if (cfg.auth === 'api-key') headers['x-api-key'] = request.apiKey;
-    else if (cfg.auth === 'custom') headers[cfg.authHeader ?? 'authorization'] = request.apiKey;
-
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
     try {
       const response = await fetch(joinUrl(this.config.baseUrl, cfg.path), {
         method: cfg.method ?? 'POST',
-        headers,
+        headers: authHeaders(cfg, request.apiKey),
         body: JSON.stringify(renderTemplate(cfg.body ?? { model: '{{model}}', prompt: '{{prompt}}' }, request)),
         signal: controller.signal,
       });
@@ -93,7 +93,10 @@ export class HttpJsonProviderAdapter implements ProviderAdapter {
       const text = await response.text();
       let payload: unknown;
       try { payload = JSON.parse(text); } catch { payload = text; }
-      if (!response.ok) throw new Error(`Provider ${this.provider} HTTP ${response.status}: ${typeof payload === 'string' ? payload.slice(0, 500) : JSON.stringify(payload).slice(0, 1000)}`);
+      if (!response.ok) {
+        const detail = typeof payload === 'string' ? payload.slice(0, 500) : JSON.stringify(payload).slice(0, 1000);
+        throw new Error(`Provider ${this.provider} HTTP ${response.status}: ${detail}`);
+      }
 
       const paths = cfg.response ?? {};
       const encoded = getPath(payload, paths.base64Path ?? 'data.0.b64_json');
@@ -116,14 +119,14 @@ export class HttpJsonProviderAdapter implements ProviderAdapter {
     const started = Date.now();
     try {
       const cfg = this.config.requestConfig;
-      const headers: Record<string, string> = { ...(cfg.headers ?? {}) };
-      if (cfg.auth === 'bearer') headers.authorization = `Bearer ${apiKey}`;
-      else if (cfg.auth === 'api-key') headers['x-api-key'] = apiKey;
-      else if (cfg.auth === 'custom') headers[cfg.authHeader ?? 'authorization'] = apiKey;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), Math.min(this.config.timeoutMs, 15000));
       try {
-        const response = await fetch(joinUrl(this.config.baseUrl, cfg.healthPath ?? cfg.path), { method: 'HEAD', headers, signal: controller.signal });
+        const response = await fetch(joinUrl(this.config.baseUrl, cfg.healthPath ?? cfg.path), {
+          method: 'HEAD',
+          headers: authHeaders(cfg, apiKey),
+          signal: controller.signal,
+        });
         return { ok: response.ok, latencyMs: Date.now() - started, message: response.ok ? undefined : `HTTP ${response.status}` };
       } finally { clearTimeout(timeout); }
     } catch (error) {
