@@ -6,26 +6,13 @@ import type { PlatformId } from '@/config/platforms';
 
 export async function createGenerationJob(input: GenerationRequest & { platform?: PlatformId; idempotencyKey?: string }) {
   const admin = getSupabaseAdmin();
-  const idempotencyKey = input.idempotencyKey ?? fingerprint({
-    userId: input.userId,
-    prompt: input.prompt,
-    operation: input.operation,
-    size: input.size,
-    width: input.width,
-    height: input.height,
-    quality: input.quality,
-    platform: input.platform,
-  });
+  const idempotencyKey = input.idempotencyKey ?? fingerprint({ userId: input.userId, prompt: input.prompt, operation: input.operation, size: input.size, width: input.width, height: input.height, quality: input.quality, platform: input.platform });
   const planned = await planGeneration(input);
 
   const { data: existing } = await admin.from('generation_jobs').select('*').eq('user_id', input.userId).eq('idempotency_key', idempotencyKey).maybeSingle();
   if (existing) return existing;
 
-  const { data: reserved, error: reserveError } = await admin.rpc('reserve_generation_credits', {
-    p_user_id: input.userId,
-    p_amount: planned.credits,
-    p_idempotency_key: idempotencyKey,
-  });
+  const { data: reserved, error: reserveError } = await admin.rpc('reserve_generation_credits', { p_user_id: input.userId, p_amount: planned.credits, p_idempotency_key: idempotencyKey });
   if (reserveError) throw new Error(`Credit reservation failed: ${reserveError.message}`);
   if (!reserved) throw new Error('Insufficient credits');
 
@@ -41,6 +28,7 @@ export async function createGenerationJob(input: GenerationRequest & { platform?
     reserved_credits: planned.credits,
     idempotency_key: idempotencyKey,
     request: {
+      plan: input.plan,
       operation: input.operation,
       prompt: input.prompt,
       size: input.size,
