@@ -3,6 +3,7 @@
 ## Implemented
 
 - Next.js + TypeScript foundation
+- Node 24 CI/runtime target with green lint/typecheck/build verification
 - Configuration-driven plans and platform specs
 - Live Supabase provider/model routing tables
 - Google Gemini image adapter using current image-generation API
@@ -10,50 +11,65 @@
 - Provider protocol/base URL/request/response mapping stored in Supabase
 - Provider/model/API-key switching through configuration/admin API without rewriting application code for supported protocols
 - Runtime route resolution from the captured generation job plan
-- Configured fallback-provider routing for provider failures
+- Configured fallback-provider routing for retryable provider failures
 - Persistent provider health status and health history
+- Model-aware provider health checks
 - Authenticated generation endpoint
 - Atomic per-user generation rate limiting
 - Transactional credit reserve/finalize/refund contracts
+- Failure-safe generation credit reservation lifecycle
 - Idempotent generation jobs
 - Supabase durable generation queue
 - Protected queue worker endpoint and Vercel cron trigger
 - Protected provider-health endpoint and scheduled health checks
 - Durable job-failure records
 - Supabase Vault provider-secret fallback
+- Supabase secret API-key compatibility with legacy service-role fallback during migration
 - Signed private upload issuance
-- Uploaded-image structural validation
+- Upload issuance rate limiting and strict client metadata validation
+- Uploaded-image structural validation based on actual stored bytes
+- Uploaded-image SHA-256 checksum persistence
+- Upload validation safety audit events
 - Private signed download URLs
 - Sharp-based preview/editor/export resizing and compression
-- Free-plan watermark compositing
+- Free-plan watermark compositing with safe text handling
 - Project creation/list/detail/update/delete APIs
+- Platform-aware project dimension validation
+- Project deletion storage cleanup
 - Generation jobs linked to owned projects
 - Project-scoped asset and generation history retrieval
+- Versioned safety-event persistence for generation requests, including blocked/review decisions
+- Active safety-policy version loading from Supabase
+- Explicit safety-policy HTTP responses
 - Minimal login/signup/create UI
 - Server-side admin provider and AI-route configuration endpoints
 - Audit-log writes for provider configuration changes
 - CI workflow for lint/typecheck/build
 - Supabase RLS/security hardening and foreign-key indexes
+- Explicit deny-by-default policies for internal operational tables
+- Supabase security advisor currently clean (0 security lints)
 
 ## Not yet launch-complete
 
 - Production image moderation/classification for uploaded, reference, and generated images
-- Runtime loading and persistence of safety decisions at every pipeline stage
+- Pixel/content safety enforcement after image generation and before publication/download
 - Provider capability discovery beyond basic health checks
-- Operational retry backoff/dead-letter queue and alerting
+- Operational exponential retry backoff/dead-letter queue and alerting
 - Production billing checkout, subscriptions, entitlements, renewals, cancellations, and signed webhook replay protection
 - Detector implementation
 - Full editor/canvas workflows
 - Full templates and brand-kit workflows
 - Full admin UI for providers, models, routes, safety, plans, users, and audit history
-- IP/account/upload/API abuse controls beyond the current generation limiter
+- IP/account/upload/API abuse controls beyond account-scoped rate limits
 - Full observability dashboards, metrics, tracing, alerts, and error tracking
 - Comprehensive unit/integration/e2e/security/safety/concurrency test suite
 - Production secrets configured and verified
 - Vercel/Supabase production deployment and end-to-end smoke test with a real provider key
 - Generated master-asset lifecycle/cleanup and complete upload-derivative pipeline
+- Atomic provider-health counters under high concurrency
 - Cost telemetry, provider spend budgets, and per-feature gross-margin controls
 - Backup/PITR restore drill, load/stress testing, and disaster-recovery verification
+- Reproducible dependency lockfile and npm-ci workflow
 - Migration from legacy Supabase service-role/anon key names to publishable/secret keys before the end-of-2026 deprecation window
 
 ## Important provider rule
