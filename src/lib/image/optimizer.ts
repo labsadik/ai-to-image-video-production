@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 
 export interface ImageVariant {
   variant: 'preview' | 'editor' | 'export';
@@ -16,7 +16,7 @@ export interface OptimizeOptions {
   watermark?: boolean;
 }
 
-const encode = (pipeline: sharp.Sharp, maxBytes: number) =>
+const encode = (pipeline: Sharp, maxBytes: number) =>
   pipeline.webp({ quality: maxBytes < 2_500_000 ? 82 : 88, effort: 4 }).toBuffer();
 
 export async function optimizeImage(input: Buffer, options: OptimizeOptions): Promise<ImageVariant[]> {
