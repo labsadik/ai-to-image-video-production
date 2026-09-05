@@ -1,12 +1,22 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; font-family: Arial, Helvetica, sans-serif; background: #f7f7f5; color: #171717; }
 body { min-height: 100vh; }
-.shell { min-height: 100vh; display: grid; place-items: center; padding: 32px; }
+a { color: inherit; }
+.shell, .auth-shell { min-height: 100vh; display: grid; place-items: center; padding: 32px; }
 .card { width: min(920px, 100%); background: white; border: 1px solid #e5e5e5; border-radius: 18px; padding: 40px; box-shadow: 0 12px 40px rgba(0,0,0,.05); }
+.auth-shell .card { width: min(440px, 100%); }
 .eyebrow { font-size: 12px; letter-spacing: .16em; font-weight: 700; margin: 0 0 16px; }
 h1 { max-width: 700px; margin: 0; font-size: clamp(34px, 6vw, 64px); line-height: 1.02; letter-spacing: -.04em; }
 .muted { max-width: 700px; color: #666; line-height: 1.6; margin: 20px 0 32px; }
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .grid > div { border: 1px solid #e8e8e8; border-radius: 12px; padding: 18px; display: grid; gap: 8px; }
 .grid span { color: #666; font-size: 14px; line-height: 1.4; }
+.form { display: grid; gap: 14px; }
+.form form { display: grid; gap: 14px; }
+.form label { display: grid; gap: 7px; font-size: 14px; font-weight: 600; }
+input, textarea, select, button { font: inherit; }
+input, textarea, select { width: 100%; border: 1px solid #d9d9d9; border-radius: 10px; padding: 12px 13px; background: white; color: inherit; }
+textarea { resize: vertical; }
+button { border: 0; border-radius: 10px; padding: 12px 16px; background: #171717; color: white; cursor: pointer; }
+button:hover { opacity: .9; }
 @media (max-width: 720px) { .card { padding: 24px; } .grid { grid-template-columns: 1fr; } }
