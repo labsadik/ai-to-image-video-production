@@ -4,9 +4,15 @@ import { getSupabaseAdmin } from './supabase-admin';
 import type { GenerationRequest } from '@/core/ai';
 import type { PlatformId } from '@/config/platforms';
 
-export async function createGenerationJob(input: GenerationRequest & { platform?: PlatformId; idempotencyKey?: string }) {
+export async function createGenerationJob(input: GenerationRequest & { platform?: PlatformId; projectId?: string; idempotencyKey?: string }) {
   const admin = getSupabaseAdmin();
-  const idempotencyKey = input.idempotencyKey ?? fingerprint({ userId: input.userId, prompt: input.prompt, operation: input.operation, size: input.size, width: input.width, height: input.height, quality: input.quality, platform: input.platform });
+  if (input.projectId) {
+    const { data: project, error: projectError } = await admin.from('projects').select('id').eq('id', input.projectId).eq('user_id', input.userId).maybeSingle();
+    if (projectError) throw new Error(`Project lookup failed: ${projectError.message}`);
+    if (!project) throw new Error('Project not found');
+  }
+
+  const idempotencyKey = input.idempotencyKey ?? fingerprint({ userId: input.userId, projectId: input.projectId, prompt: input.prompt, operation: input.operation, size: input.size, width: input.width, height: input.height, quality: input.quality, platform: input.platform });
   const planned = await planGeneration(input);
 
   const { data: existing } = await admin.from('generation_jobs').select('*').eq('user_id', input.userId).eq('idempotency_key', idempotencyKey).maybeSingle();
@@ -18,6 +24,7 @@ export async function createGenerationJob(input: GenerationRequest & { platform?
 
   const { data: job, error: insertError } = await admin.from('generation_jobs').insert({
     user_id: input.userId,
+    project_id: input.projectId ?? null,
     status: 'queued',
     operation: input.operation,
     prompt: input.prompt,
