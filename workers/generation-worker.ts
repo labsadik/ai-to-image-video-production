@@ -15,12 +15,12 @@ export async function processGenerationJob(jobId: string) {
   if (loadError || !job) throw new Error(`Job not found: ${jobId}`);
   if (job.status === 'succeeded' || job.status === 'cancelled') return job;
 
-  const request = job.request as Record<string, unknown>;
-  const claim = await admin.from('generation_jobs').update({ status: 'processing', started_at: new Date().toISOString() }).eq('id', job.id).eq('status', 'queued');
-  if (claim.error) throw new Error(`Unable to claim job: ${claim.error.message}`);
-  if (!claim.data?.length) return job;
+  const { data: claimed, error: claimError } = await admin.from('generation_jobs').update({ status: 'processing', started_at: new Date().toISOString() }).eq('id', job.id).eq('status', 'queued').select('id');
+  if (claimError) throw new Error(`Unable to claim job: ${claimError.message}`);
+  if (!claimed?.length) return job;
 
   try {
+    const request = job.request as Record<string, unknown>;
     const adapter = getProviderAdapter(job.provider);
     const providerConfig = PROVIDER_CATALOG[job.provider as keyof typeof PROVIDER_CATALOG];
     const apiKey = await getProviderSecret(job.provider, providerConfig.secretEnv);
