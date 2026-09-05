@@ -33,11 +33,9 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
       contents: [{ role: 'user', parts }],
       config: {
         responseModalities: ['IMAGE'],
-        responseFormat: {
-          image: {
-            aspectRatio: aspectRatio(request.width, request.height),
-            imageSize: imageSize(request.quality),
-          },
+        imageConfig: {
+          aspectRatio: aspectRatio(request.width, request.height),
+          imageSize: imageSize(request.quality),
         },
       },
     });
