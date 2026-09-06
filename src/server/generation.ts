@@ -14,14 +14,19 @@ export async function createGenerationJob(input: GenerationRequest & { platform?
     if (!project) throw new Error('Project not found');
   }
 
-  const idempotencyKey = input.idempotencyKey ?? fingerprint({ userId: input.userId, projectId: input.projectId, prompt: input.prompt, operation: input.operation, size: input.size, width: input.width, height: input.height, quality: input.quality, platform: input.platform, referenceImageStoragePaths: input.referenceImageStoragePaths ?? [] });
+  const referencePaths = Array.isArray(input.referenceImageStoragePaths) ? input.referenceImageStoragePaths.filter((value): value is string => typeof value === 'string' && value.length > 0).slice(0, 1) : [];
+  if (referencePaths.length) {
+    const { data: referenceAssets, error: referenceError } = await admin.from('assets').select('storage_path,status,kind,mime_type').eq('user_id', input.userId).in('storage_path', referencePaths).limit(referencePaths.length);
+    if (referenceError) throw new Error(`Reference image lookup failed: ${referenceError.message}`);
+    if (referenceAssets?.length !== referencePaths.length || referenceAssets.some((asset) => asset.kind !== 'upload' || asset.status !== 'ready' || !['image/jpeg', 'image/png', 'image/webp'].includes(asset.mime_type))) throw new Error('Reference image is unavailable or has not passed image validation.');
+  }
+
+  const idempotencyKey = input.idempotencyKey ?? fingerprint({ userId: input.userId, projectId: input.projectId, prompt: input.prompt, operation: input.operation, size: input.size, width: input.width, height: input.height, quality: input.quality, platform: input.platform, referenceImageStoragePaths: referencePaths });
   let planned;
   try {
-    planned = await planGeneration(input);
+    planned = await planGeneration({ ...input, referenceImageStoragePaths: referencePaths });
   } catch (error) {
-    if (error instanceof SafetyPolicyViolation) {
-      await recordSafetyEvent({ userId: input.userId, stage: 'prompt_validation', decision: error.decision, reasons: error.reasons, score: error.decision === 'block' ? 1 : 0.5, policyVersion: error.policyVersion });
-    }
+    if (error instanceof SafetyPolicyViolation) await recordSafetyEvent({ userId: input.userId, stage: 'prompt_validation', decision: error.decision, reasons: error.reasons, score: error.decision === 'block' ? 1 : 0.5, policyVersion: error.policyVersion });
     throw error;
   }
 
@@ -49,8 +54,8 @@ export async function createGenerationJob(input: GenerationRequest & { platform?
       height: planned.height,
       quality: input.quality,
       platform: input.platform ?? null,
-      referenceImages: input.referenceImageStoragePaths?.length ? [] : input.referenceImages ?? [],
-      referenceImageStoragePaths: input.referenceImageStoragePaths ?? [],
+      referenceImages: referencePaths.length ? [] : input.referenceImages ?? [],
+      referenceImageStoragePaths: referencePaths,
       watermark: planned.watermark,
       maxExportBytes: planned.maxExportBytes,
       safetyPolicyVersion: planned.safety.policyVersion,
@@ -61,17 +66,13 @@ export async function createGenerationJob(input: GenerationRequest & { platform?
 
   try {
     await recordSafetyEvent({ userId: input.userId, jobId: job.id, stage: 'prompt_validation', decision: 'allow', reasons: [], score: planned.safety.score, policyVersion: planned.safety.policyVersion });
-
     const { data: reserved, error: reserveError } = await admin.rpc('reserve_generation_credits', { p_user_id: input.userId, p_amount: planned.credits, p_idempotency_key: idempotencyKey });
     if (reserveError) throw new Error(`Credit reservation failed: ${reserveError.message}`);
     if (!reserved) throw new Error('Insufficient credits');
-
     const { data: reservedJob, error: reserveJobError } = await admin.from('generation_jobs').update({ reserved_credits: planned.credits }).eq('id', job.id).eq('reserved_credits', 0).select('*').single();
     if (reserveJobError || !reservedJob) throw new Error(reserveJobError?.message ?? 'Unable to attach reserved credits to job');
-
     const { error: queueError } = await admin.rpc('enqueue_generation_job', { p_job_id: job.id });
     if (queueError) throw new Error(`Queue enqueue failed: ${queueError.message}`);
-
     return reservedJob;
   } catch (error) {
     await admin.from('generation_jobs').update({ status: 'failed', error_code: 'GENERATION_REQUEST_FAILED', error_message: error instanceof Error ? error.message : 'Generation request failed', completed_at: new Date().toISOString() }).eq('id', job.id);
