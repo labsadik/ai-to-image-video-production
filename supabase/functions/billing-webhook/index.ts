@@ -54,6 +54,25 @@ Deno.serve(async (req: Request) => {
     let userId = object.metadata?.user_id ?? null;
     let planId = object.metadata?.plan_id ?? null;
     if (eventType === "checkout.session.completed" || eventType === "checkout.session.async_payment_succeeded") {
+      if (object.mode === "payment" && object.payment_status === "paid" && object.metadata?.purchase_kind === "credit_pack") {
+        const productId = String(object.metadata?.product_id ?? "");
+        const countryCode = String(object.metadata?.country_code ?? "").toUpperCase();
+        const currency = String(object.metadata?.currency ?? object.currency ?? "").toUpperCase();
+        const amountMinor = Number(object.amount_total ?? object.metadata?.amount_minor ?? 0);
+        if (userId && productId && countryCode && currency && Number.isSafeInteger(amountMinor) && amountMinor > 0) {
+          const { error } = await admin.rpc("grant_credit_product_purchase", {
+            p_user_id: userId,
+            p_product_id: productId,
+            p_country_code: countryCode,
+            p_currency: currency,
+            p_amount_minor: amountMinor,
+            p_idempotency_key: `stripe:credit-pack:${String(object.id)}`,
+            p_external_reference: String(object.id),
+            p_metadata: { provider: "stripe", checkout_session_id: String(object.id), event_id: eventId },
+          });
+          if (error) throw new Error(`Credit pack grant failed: ${error.message}`);
+        }
+      }
       if (object.mode === "payment" && object.payment_status === "paid" && object.metadata?.purchase_kind === "addon") {
         const credits = Number(object.metadata?.credits ?? 0);
         if (userId && Number.isInteger(credits) && credits > 0) {
