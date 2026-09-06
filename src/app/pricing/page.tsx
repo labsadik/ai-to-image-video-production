@@ -3,6 +3,8 @@ import { ArrowLeft, Check, Globe2, Sparkles } from 'lucide-react';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { PlanComparison } from '@/components/plan-comparison';
 
+export const dynamic = 'force-dynamic';
+
 const countries = [
   { code: 'IN', name: 'India' },
   { code: 'US', name: 'United States' },
