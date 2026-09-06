@@ -1,9 +1,8 @@
-import sharp, { type Sharp } from 'sharp';
+import sharp from 'sharp';
 
-export interface ImageVariant {
-  variant: 'preview' | 'editor' | 'export';
+export interface OptimizedImage {
   buffer: Buffer;
-  mimeType: string;
+  mimeType: 'image/webp';
   width: number;
   height: number;
   byteSize: number;
@@ -13,46 +12,42 @@ export interface OptimizeOptions {
   width: number;
   height: number;
   maxBytes: number;
-  watermark?: boolean;
 }
 
-const BACKGROUND = { r: 248, g: 250, b: 252, alpha: 1 };
-const encode = (pipeline: Sharp, maxBytes: number) =>
-  pipeline.webp({ quality: maxBytes < 2_500_000 ? 82 : 88, effort: 4 }).toBuffer();
-
-function fitCanvas(input: Sharp, width: number, height: number) {
-  return input.resize(width, height, {
-    fit: 'contain',
-    position: 'centre',
-    background: BACKGROUND,
-  });
+function targetSize(width: number, height: number) {
+  return { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) };
 }
 
-export async function optimizeImage(input: Buffer, options: OptimizeOptions): Promise<ImageVariant[]> {
-  const base = sharp(input, { failOn: 'error' }).rotate();
-  let exportBuffer = await encode(fitCanvas(base.clone(), options.width, options.height), options.maxBytes);
+export async function optimizeImage(input: Buffer, options: OptimizeOptions): Promise<OptimizedImage> {
+  const source = sharp(input, { failOn: 'error' }).rotate();
+  const metadata = await source.metadata();
+  const sourceWidth = metadata.width ?? options.width;
+  const sourceHeight = metadata.height ?? options.height;
+  const target = targetSize(options.width, options.height);
 
-  if (exportBuffer.byteLength > options.maxBytes) {
-    const qualitySteps = [76, 68, 60, 52];
-    for (const quality of qualitySteps) {
-      exportBuffer = await fitCanvas(base.clone(), options.width, options.height).webp({ quality, effort: 4 }).toBuffer();
-      if (exportBuffer.byteLength <= options.maxBytes) break;
+  // Keep the image's real composition. Never pad and never crop important content.
+  // Resize only when the source exceeds the requested canvas bounds, preserving aspect ratio.
+  const shouldResize = sourceWidth > target.width || sourceHeight > target.height;
+  const pipeline = shouldResize
+    ? source.resize(target.width, target.height, { fit: 'inside', withoutEnlargement: true })
+    : source;
+
+  const encode = (quality: number) => pipeline.clone().webp({ quality, effort: 5 }).toBuffer();
+  let buffer = await encode(options.maxBytes < 2_500_000 ? 88 : 92);
+
+  if (buffer.byteLength > options.maxBytes) {
+    for (const quality of [84, 78, 72, 66, 60]) {
+      buffer = await encode(quality);
+      if (buffer.byteLength <= options.maxBytes) break;
     }
   }
 
-  const previewWidth = Math.min(1024, options.width);
-  const editorWidth = Math.min(1600, options.width);
-  const previewHeight = Math.max(1, Math.round(previewWidth * options.height / options.width));
-  const editorHeight = Math.max(1, Math.round(editorWidth * options.height / options.width));
-  const preview = await fitCanvas(base.clone(), previewWidth, previewHeight).webp({ quality: 76, effort: 3 }).toBuffer();
-  const editor = await fitCanvas(base.clone(), editorWidth, editorHeight).webp({ quality: 82, effort: 3 }).toBuffer();
-  const exportMeta = await sharp(exportBuffer).metadata();
-  const previewMeta = await sharp(preview).metadata();
-  const editorMeta = await sharp(editor).metadata();
-
-  return [
-    { variant: 'preview', buffer: preview, mimeType: 'image/webp', width: previewMeta.width ?? previewWidth, height: previewMeta.height ?? previewHeight, byteSize: preview.byteLength },
-    { variant: 'editor', buffer: editor, mimeType: 'image/webp', width: editorMeta.width ?? editorWidth, height: editorMeta.height ?? editorHeight, byteSize: editor.byteLength },
-    { variant: 'export', buffer: exportBuffer, mimeType: 'image/webp', width: exportMeta.width ?? options.width, height: exportMeta.height ?? options.height, byteSize: exportBuffer.byteLength },
-  ];
+  const finalMetadata = await sharp(buffer).metadata();
+  return {
+    buffer,
+    mimeType: 'image/webp',
+    width: finalMetadata.width ?? sourceWidth,
+    height: finalMetadata.height ?? sourceHeight,
+    byteSize: buffer.byteLength,
+  };
 }
