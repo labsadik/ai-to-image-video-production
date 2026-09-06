@@ -8,4 +8,6 @@ supabase/functions/.env
 .vercel
 coverage
 *.log
+*.tsbuildinfo
+next-env.d.ts
 .DS_Store
