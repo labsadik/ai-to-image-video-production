@@ -47,7 +47,7 @@ export function DashboardShell({ children, name, email, role, credits, plan }: {
             <div className="rounded-2xl bg-slate-950 p-4 text-white">
               <div className="flex items-center justify-between text-xs text-slate-300"><span>{plan.toUpperCase()} PLAN</span><span>{credits} credits</span></div>
               <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full w-2/3 rounded-full bg-white" /></div>
-              <p className="mt-2 text-[11px] text-slate-400">Media Studio shows the live balance, costs, limits, and action estimates.</p>
+              <p className="mt-2 text-[11px] text-slate-400">Use the live Usage window in Media Studio for current balance, costs, limits, and run estimates.</p>
             </div>
             <div className="mt-4 flex items-center gap-3 rounded-xl p-2">
               <div className="grid size-9 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">{initials}</div>
@@ -62,11 +62,14 @@ export function DashboardShell({ children, name, email, role, credits, plan }: {
           <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-3 px-4 sm:px-6 lg:px-8">
             <button aria-label="Open menu" className="grid size-10 place-items-center rounded-xl border border-slate-200 text-slate-600 lg:hidden" onClick={() => setOpen(true)}><Menu className="size-5" /></button>
             <div className="hidden min-w-0 lg:block"><p className="text-[11px] font-medium uppercase tracking-wider text-slate-400">Workspace</p><p className="truncate text-sm font-semibold">AI design studio</p></div>
-            <div className="ml-auto flex items-center gap-2"><button aria-label="Notifications" className="grid size-10 place-items-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50"><Bell className="size-4" /></button><div className="hidden rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 sm:block">Protected workspace</div></div>
+            <div className="ml-auto flex items-center gap-2">
+              {pathname === '/dashboard/media' && <MediaUsagePanel />}
+              <button aria-label="Notifications" className="grid size-10 place-items-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50"><Bell className="size-4" /></button>
+              <div className="hidden rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 sm:block">Protected workspace</div>
+            </div>
           </div>
         </header>
         <main className="mx-auto w-full max-w-[1440px] p-4 sm:p-6 lg:p-8 motion-enter">
-          {pathname === '/dashboard/media' && <MediaUsagePanel className="mb-7 sm:mb-8" />}
           {children}
         </main>
       </div>
