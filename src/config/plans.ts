@@ -16,7 +16,7 @@ export const GENERATION_PLANS = {
   },
   pro: {
     monthlyCredits: 50,
-    maxUploadsPerProject: 10,
+    maxUploadsPerProject: 5,
     watermark: false,
     credits: { preview: 1, standard: 5, premium: 10 },
     models: {
@@ -27,7 +27,7 @@ export const GENERATION_PLANS = {
   },
   business: {
     monthlyCredits: 100,
-    maxUploadsPerProject: 20,
+    maxUploadsPerProject: 10,
     watermark: false,
     credits: { preview: 1, standard: 5, premium: 10 },
     models: {
