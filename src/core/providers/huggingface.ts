@@ -1,9 +1,36 @@
 import { InferenceClient } from '@huggingface/inference';
 import type { GenerationRequest, ProviderAdapter, ProviderResult } from '@/core/ai';
 
+type HuggingFaceProvider =
+  | 'auto'
+  | 'baseten'
+  | 'cerebras'
+  | 'cohere'
+  | 'deepinfra'
+  | 'fal-ai'
+  | 'featherless-ai'
+  | 'fireworks-ai'
+  | 'groq'
+  | 'hf-inference'
+  | 'novita'
+  | 'nscale'
+  | 'openai'
+  | 'ovhcloud'
+  | 'publicai'
+  | 'replicate'
+  | 'sambanova'
+  | 'scaleway'
+  | 'together'
+  | 'zai-org';
+
 export interface HuggingFaceImageProviderConfig {
   provider: string;
   timeoutMs: number;
+}
+
+function resolveProvider(provider: string): HuggingFaceProvider | undefined {
+  if (provider === 'auto') return undefined;
+  return provider as HuggingFaceProvider;
 }
 
 export class HuggingFaceImageProviderAdapter implements ProviderAdapter {
@@ -26,9 +53,8 @@ export class HuggingFaceImageProviderAdapter implements ProviderAdapter {
           height: request.height,
         },
       }, {
-        provider: this.config.provider === 'auto' ? undefined : this.config.provider,
+        provider: resolveProvider(this.config.provider),
         signal: controller.signal,
-        outputType: 'blob',
       });
 
       const buffer = Buffer.from(await image.arrayBuffer());
@@ -54,9 +80,8 @@ export class HuggingFaceImageProviderAdapter implements ProviderAdapter {
     try {
       const client = new InferenceClient(apiKey);
       await client.textToImage({ model, inputs: 'simple abstract test image' }, {
-        provider: this.config.provider === 'auto' ? undefined : this.config.provider,
+        provider: resolveProvider(this.config.provider),
         signal: AbortSignal.timeout(Math.min(this.config.timeoutMs, 15000)),
-        outputType: 'blob',
       });
       return { ok: true, latencyMs: Date.now() - started };
     } catch (error) {
