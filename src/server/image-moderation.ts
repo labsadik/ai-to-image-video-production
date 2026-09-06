@@ -66,7 +66,8 @@ async function moderateWithHuggingFaceImageClassification(input: { apiKey: strin
   const client = new InferenceClient(input.apiKey);
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
   try {
-    const output = await client.imageClassification({ data: Buffer.from(input.base64, 'base64'), model: input.model }, {
+    const bytes = Uint8Array.from(Buffer.from(input.base64, 'base64'));
+    const output = await client.imageClassification({ data: bytes.buffer, model: input.model }, {
       provider: input.provider === 'auto' ? 'hf-inference' : resolveHuggingFaceProvider(input.provider),
       signal: controller.signal,
     });
