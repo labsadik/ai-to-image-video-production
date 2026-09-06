@@ -6,6 +6,7 @@ export const GENERATION_PLANS = {
   free: {
     monthlyCredits: 5,
     maxUploadsPerProject: 2,
+    maxUploadsPerMonth: 2,
     watermark: true,
     credits: { preview: 1, standard: 5, premium: 10 },
     models: {
@@ -17,6 +18,7 @@ export const GENERATION_PLANS = {
   pro: {
     monthlyCredits: 50,
     maxUploadsPerProject: 5,
+    maxUploadsPerMonth: 5,
     watermark: false,
     credits: { preview: 1, standard: 5, premium: 10 },
     models: {
@@ -28,6 +30,7 @@ export const GENERATION_PLANS = {
   business: {
     monthlyCredits: 100,
     maxUploadsPerProject: 20,
+    maxUploadsPerMonth: 20,
     watermark: false,
     credits: { preview: 1, standard: 5, premium: 10 },
     models: {
@@ -39,6 +42,7 @@ export const GENERATION_PLANS = {
 } satisfies Record<string, {
   monthlyCredits: number;
   maxUploadsPerProject: number;
+  maxUploadsPerMonth: number;
   watermark: boolean;
   credits: Record<'preview' | 'standard' | 'premium', number>;
   models: Record<'preview' | 'standard' | 'premium', { provider: ProviderName; tier: 'preview' | 'standard' | 'premium' }>;
