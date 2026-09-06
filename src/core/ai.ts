@@ -2,6 +2,7 @@ import { GENERATION_PLANS } from '@/config/plans';
 import { PROVIDER_CATALOG, type QualityKey } from '@/config/providers';
 
 export type GenerationQuality = QualityKey;
+export type FeatureCategory = 'social_image' | 'text_graphic';
 export type Operation = 'generateImage' | 'editImage' | 'enhanceImage' | 'detectImage';
 
 export interface ReferenceImage {
@@ -13,6 +14,7 @@ export interface GenerationRequest {
   userId: string;
   plan: keyof typeof GENERATION_PLANS;
   operation: Exclude<Operation, 'detectImage'>;
+  category?: FeatureCategory;
   prompt: string;
   size: string;
   width: number;
@@ -45,6 +47,6 @@ export function resolveModel(plan: GenerationRequest['plan'], quality: Generatio
   return { providerName: route.provider, model, secretEnv: provider.secretEnv };
 }
 
-export function requiredCredits(plan: GenerationRequest['plan'], quality: GenerationQuality) {
-  return GENERATION_PLANS[plan].credits[quality];
+export function requiredCredits(_plan: GenerationRequest['plan'], quality: GenerationQuality) {
+  return quality === 'preview' ? 1 : quality === 'standard' ? 5 : 10;
 }
