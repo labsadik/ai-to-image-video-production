@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body><NavigationProgress />{children}</body></html>;
+  return <html lang="en"><body className="min-w-80 bg-slate-50 text-slate-950"><NavigationProgress />{children}</body></html>;
 }
