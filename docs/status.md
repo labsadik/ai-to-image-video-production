@@ -3,7 +3,7 @@
 ## Implemented
 
 - Next.js + TypeScript foundation
-- Node 24 CI/runtime target with green lint/typecheck/build verification
+- Node 24 CI/runtime target with lint/typecheck/build verification
 - Configuration-driven plans and platform specs
 - Live Supabase provider/model routing tables
 - Google Gemini image adapter using current image-generation API
@@ -21,7 +21,6 @@
 - Idempotent generation jobs
 - Supabase durable generation queue
 - Protected queue worker endpoint and Vercel cron trigger
-- Protected provider-health endpoint and scheduled health checks
 - Durable job-failure records
 - Supabase Vault provider-secret fallback
 - Supabase secret API-key compatibility with legacy service-role fallback during migration
@@ -29,7 +28,9 @@
 - Upload issuance rate limiting and strict client metadata validation
 - Uploaded-image structural validation based on actual stored bytes
 - Uploaded-image SHA-256 checksum persistence
-- Upload validation safety audit events
+- Vision-based moderation for uploaded/generated images with versioned policy selection
+- Moderation decisions persisted with provider/model attribution
+- Blocked/review assets cannot receive signed download URLs
 - Private signed download URLs
 - Sharp-based preview/editor/export resizing and compression
 - Free-plan watermark compositing with safe text handling
@@ -38,9 +39,14 @@
 - Project deletion storage cleanup
 - Generation jobs linked to owned projects
 - Project-scoped asset and generation history retrieval
-- Versioned safety-event persistence for generation requests, including blocked/review decisions
+- Versioned safety-event persistence for generation requests and image moderation
 - Active safety-policy version loading from Supabase
 - Explicit safety-policy HTTP responses
+- Supabase Edge Functions deployed: `health`, `provider-health`, `pricing`, `image-moderation`, `generation-worker`, `billing-webhook`
+- Supabase Edge Function source tracked under `supabase/functions/`
+- Country-aware pricing data model for five initial markets: IN, US, BD, GB, AE
+- Country/currency/locale pricing endpoint using country headers or explicit country selection
+- Billing webhook receiver with Stripe signature validation and replay-event persistence
 - Minimal login/signup/create UI
 - Server-side admin provider and AI-route configuration endpoints
 - Audit-log writes for provider configuration changes
@@ -51,11 +57,12 @@
 
 ## Not yet launch-complete
 
-- Production image moderation/classification for uploaded, reference, and generated images
-- Pixel/content safety enforcement after image generation and before publication/download
+- Production Stripe Checkout/session creation and customer billing portal
+- Production subscription price IDs and billing secrets
+- Automated country-specific tax/VAT/GST handling and tax evidence policy
+- Edge-to-production generation worker bridge secrets and deployed Vercel app URL
 - Provider capability discovery beyond basic health checks
 - Operational exponential retry backoff/dead-letter queue and alerting
-- Production billing checkout, subscriptions, entitlements, renewals, cancellations, and signed webhook replay protection
 - Detector implementation
 - Full editor/canvas workflows
 - Full templates and brand-kit workflows
@@ -63,8 +70,8 @@
 - IP/account/upload/API abuse controls beyond account-scoped rate limits
 - Full observability dashboards, metrics, tracing, alerts, and error tracking
 - Comprehensive unit/integration/e2e/security/safety/concurrency test suite
-- Production secrets configured and verified
-- Vercel/Supabase production deployment and end-to-end smoke test with a real provider key
+- Production provider credentials configured and verified end-to-end
+- Vercel production project and end-to-end smoke test with a real provider key
 - Generated master-asset lifecycle/cleanup and complete upload-derivative pipeline
 - Atomic provider-health counters under high concurrency
 - Cost telemetry, provider spend budgets, and per-feature gross-margin controls
