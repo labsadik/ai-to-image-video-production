@@ -78,10 +78,12 @@ export async function processGenerationJob(jobId: string) {
       : await resolveLiveProviderModel(planId, job.quality);
     if (route.provider !== job.provider || route.model !== job.model) throw new Error(`Job route changed after enqueue; refusing stale provider/model ${job.provider}/${job.model}`);
 
+    const fallbackProviderId = 'fallbackProviderId' in route && typeof route.fallbackProviderId === 'string' ? route.fallbackProviderId : undefined;
+    const fallbackModelId = 'fallbackModelId' in route && typeof route.fallbackModelId === 'string' ? route.fallbackModelId : undefined;
     const candidates = [{ provider: route.provider, model: route.model, config: route }];
-    if ('fallbackProviderId' in route && route.fallbackProviderId && route.fallbackModelId && (route.fallbackProviderId !== route.provider || route.fallbackModelId !== route.model)) {
+    if (fallbackProviderId && fallbackModelId && (fallbackProviderId !== route.provider || fallbackModelId !== route.model)) {
       try {
-        const fallbackConfig = await resolveProviderConfig(route.fallbackProviderId, route.fallbackModelId);
+        const fallbackConfig = await resolveProviderConfig(fallbackProviderId, fallbackModelId);
         candidates.push({ provider: fallbackConfig.provider, model: fallbackConfig.model, config: fallbackConfig });
       } catch (fallbackError) {
         console.warn('Fallback provider configuration unavailable', fallbackError);
