@@ -15,6 +15,17 @@ async function resolveProjectName(userId: string, projectId?: string | null) {
   return 'SOLAMENTIS';
 }
 
+function videoDimensions(resolution: '720p' | '1080p', aspectRatio: string) {
+  const longEdge = resolution === '1080p' ? 1920 : 1280;
+  switch (aspectRatio) {
+    case '9:16': return { width: Math.round(longEdge * 9 / 16), height: longEdge };
+    case '1:1': return { width: longEdge, height: longEdge };
+    case '4:3': return { width: longEdge, height: Math.round(longEdge * 3 / 4) };
+    case '3:4': return { width: Math.round(longEdge * 3 / 4), height: longEdge };
+    default: return { width: longEdge, height: Math.round(longEdge * 9 / 16) };
+  }
+}
+
 export async function processVideoAdJob(job: any) {
   const admin = getSupabaseAdmin();
   const request = (job.request ?? {}) as Record<string, unknown>;
@@ -67,8 +78,7 @@ export async function processVideoAdJob(job: any) {
   const { error: uploadError } = await admin.storage.from('solamentis-assets').upload(storagePath, processed.buffer, { contentType: processed.mimeType, upsert: true, cacheControl: '31536000, immutable' });
   if (uploadError) throw new Error(`Video storage upload failed: ${uploadError.message}`);
 
-  const width = resolution === '1080p' ? 1920 : 1280;
-  const height = aspectRatio === '9:16' ? Math.round(width * 16 / 9) : aspectRatio === '1:1' ? width : Math.round(width * 9 / 16);
+  const dimensions = videoDimensions(resolution, aspectRatio);
   const { data: asset, error: assetError } = await admin.from('assets').insert({
     user_id: job.user_id,
     project_id: job.project_id ?? null,
@@ -76,8 +86,8 @@ export async function processVideoAdJob(job: any) {
     storage_path: storagePath,
     mime_type: processed.mimeType,
     byte_size: processed.byteSize,
-    width,
-    height,
+    width: dimensions.width,
+    height: dimensions.height,
     status: 'ready',
     metadata: {
       job_id: job.id,
@@ -106,8 +116,8 @@ export async function processVideoAdJob(job: any) {
     variant: 'master',
     storage_path: storagePath,
     mime_type: processed.mimeType,
-    width,
-    height,
+    width: dimensions.width,
+    height: dimensions.height,
     byte_size: processed.byteSize,
   }, { onConflict: 'job_id,variant' });
   if (outputError) throw new Error(`Failed to persist video output: ${outputError.message}`);
