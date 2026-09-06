@@ -25,7 +25,7 @@ async function markProviderHealth(providerId: string, ok: boolean, latencyMs?: n
   const { data: provider } = await admin.from('ai_providers').select('health_failures').eq('id', providerId).maybeSingle();
   const failures = ok ? 0 : Number(provider?.health_failures ?? 0) + 1;
   await admin.from('ai_providers').update({
-    health_status: ok ? 'healthy' : 'unhealthy',
+    health_status: ok ? 'healthy' : 'degraded',
     health_checked_at: new Date().toISOString(),
     health_latency_ms: latencyMs ?? null,
     health_message: message ?? null,
@@ -108,7 +108,22 @@ export async function processGenerationJob(jobId: string) {
       jobId: job.id,
       stage: 'post_generation_image_moderation',
     });
-    const assetStatus = moderation.decision === 'allow' ? 'ready' : moderation.decision === 'review' ? 'review' : 'blocked';
+
+    if (moderation.decision !== 'allow') {
+      const safetyCode = moderation.decision === 'block' ? 'SAFETY_BLOCKED' : 'SAFETY_REVIEW_REQUIRED';
+      await admin.from('generation_jobs').update({
+        status: 'failed',
+        error_code: safetyCode,
+        error_message: moderation.reasons.length ? moderation.reasons.join('; ') : 'Generated image did not pass post-generation safety policy',
+        completed_at: new Date().toISOString(),
+        request: { ...(request ?? {}), actualProvider, actualModel, moderationDecision: moderation.decision },
+      }).eq('id', job.id);
+      if (job.reserved_credits > 0) {
+        const { error: refundError } = await admin.rpc('refund_generation_credits', { p_user_id: job.user_id, p_amount: job.reserved_credits, p_idempotency_key: `${job.idempotency_key}:${safetyCode.toLowerCase()}` });
+        if (refundError) throw new Error(`Safety refund failed: ${refundError.message}`);
+      }
+      return await admin.from('generation_jobs').select('*').eq('id', job.id).single().then(({ data }) => data ?? job);
+    }
 
     let outputBuffer = outputBufferBeforeModeration;
     if (Boolean(request.watermark)) outputBuffer = await applyWatermark(outputBuffer);
@@ -122,16 +137,16 @@ export async function processGenerationJob(jobId: string) {
     }
 
     const exportVariant = variants.find(v => v.variant === 'export');
-    const { data: asset, error: assetError } = await admin.from('assets').upsert({
+    const { data: asset, error: assetError } = await admin.from('assets').insert({
       user_id: job.user_id,
       project_id: job.project_id ?? null,
-      kind: 'generation',
+      kind: 'generated',
       storage_path: `${base}/export.webp`,
       mime_type: 'image/webp',
       byte_size: exportVariant?.byteSize ?? outputBuffer.byteLength,
       width: Number(request.width ?? 1024),
       height: Number(request.height ?? 1024),
-      status: assetStatus,
+      status: 'ready',
       metadata: {
         job_id: job.id,
         provider: actualProvider,
@@ -163,14 +178,13 @@ export async function processGenerationJob(jobId: string) {
     const currentAttempts = Number((job.request as Record<string, unknown>)?.attempts ?? 0) + 1;
     await admin.from('job_failures').insert({ job_id: job.id, attempt: currentAttempts, error_code: 'GENERATION_ATTEMPT_FAILED', error_message: message, provider_id: job.provider, model_key: job.model });
     if (creditsFinalized || currentAttempts >= MAX_ATTEMPTS) {
-      if (!creditsFinalized) await admin.rpc('refund_generation_credits', { p_user_id: job.user_id, p_amount: job.reserved_credits, p_idempotency_key: job.idempotency_key });
+      if (!creditsFinalized && currentAttempts >= MAX_ATTEMPTS) await admin.rpc('refund_generation_credits', { p_user_id: job.user_id, p_amount: job.reserved_credits, p_idempotency_key: `${job.idempotency_key}:terminal_refund` });
       await admin.from('generation_jobs').update({ status: 'failed', error_code: 'GENERATION_FAILED', error_message: message, completed_at: new Date().toISOString(), request: { ...(job.request ?? {}), attempts: currentAttempts, last_error: message } }).eq('id', job.id);
-      if (creditsFinalized) return job;
-      throw error;
+      return await admin.from('generation_jobs').select('*').eq('id', job.id).single().then(({ data }) => data ?? job);
     }
 
     await admin.from('generation_jobs').update({ status: 'queued', error_code: 'RETRY_PENDING', error_message: message, request: { ...(job.request ?? {}), attempts: currentAttempts, last_error: message } }).eq('id', job.id);
-    throw error;
+    return job;
   }
 }
 
@@ -178,7 +192,9 @@ export async function processGenerationQueue(batchSize = 5) {
   const admin = getSupabaseAdmin();
   const { data: messages, error } = await admin.rpc('claim_generation_messages', { p_visibility_seconds: 600, p_quantity: batchSize });
   if (error) throw new Error(`Queue read failed: ${error.message}`);
+  let processed = 0;
   for (const message of (messages ?? []) as Array<{ msg_id: number; message: QueueMessage }>) {
+    processed += 1;
     try {
       const job = await processGenerationJob(message.message.job_id);
       if (job.status === 'succeeded' || job.status === 'failed' || job.status === 'cancelled') await admin.rpc('delete_generation_message', { p_msg_id: message.msg_id });
@@ -188,4 +204,5 @@ export async function processGenerationQueue(batchSize = 5) {
       console.error('Generation job failed', message.message.job_id, error);
     }
   }
+  return processed;
 }
