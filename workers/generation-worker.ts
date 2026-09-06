@@ -18,6 +18,16 @@ function isRetryableProviderError(error: unknown): boolean {
   return Boolean(status);
 }
 
+function isDegradedModerationResult(result: Awaited<ReturnType<typeof moderateImage>>) {
+  return result.decision === 'review' && result.reasons.some(reason => reason.toLowerCase().includes('vision moderation unavailable'));
+}
+
+function allowDegradedPreviewSafety(jobQuality: string) {
+  return jobQuality === 'preview'
+    && process.env.NODE_ENV !== 'production'
+    && process.env.SOLAMENTIS_ALLOW_DEGRADED_PREVIEW_SAFETY === 'true';
+}
+
 async function markProviderHealth(providerId: string, ok: boolean, latencyMs?: number, message?: string) {
   const admin = getSupabaseAdmin();
   const { data: provider } = await admin.from('ai_providers').select('health_failures').eq('id', providerId).maybeSingle();
@@ -99,13 +109,22 @@ export async function processGenerationJob(jobId: string) {
     if (!result) throw lastProviderError instanceof Error ? lastProviderError : new Error('All configured AI providers failed');
 
     const outputBufferBeforeModeration = Buffer.from(result.base64, 'base64');
-    const moderation = await moderateImage({
+    let moderation = await moderateImage({
       mimeType: result.mimeType || 'image/png',
       base64: result.base64,
       userId: job.user_id,
       jobId: job.id,
       stage: 'generation',
     });
+    const degradedSafety = isDegradedModerationResult(moderation) && allowDegradedPreviewSafety(job.quality);
+    if (degradedSafety) {
+      console.warn(`[solamentis-worker] allowing preview job ${job.id} to continue with degraded post-generation safety because SOLAMENTIS_ALLOW_DEGRADED_PREVIEW_SAFETY=true`);
+      moderation = {
+        ...moderation,
+        decision: 'allow',
+        reasons: [...moderation.reasons, 'Degraded preview safety mode enabled for local testing'],
+      };
+    }
 
     if (moderation.decision !== 'allow') {
       const safetyCode = moderation.decision === 'block' ? 'SAFETY_BLOCKED' : 'SAFETY_REVIEW_REQUIRED';
@@ -156,6 +175,7 @@ export async function processGenerationJob(jobId: string) {
         moderation_provider: moderation.provider,
         moderation_model: moderation.model,
         moderation_reasons: moderation.reasons,
+        degraded_safety: degradedSafety,
         variants: variants.map(v => ({ variant: v.variant, path: `${base}/${v.variant}.webp`, bytes: v.byteSize })),
       },
     }).select('id').single();
