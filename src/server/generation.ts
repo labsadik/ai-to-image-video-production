@@ -14,7 +14,7 @@ export async function createGenerationJob(input: GenerationRequest & { platform?
     if (!project) throw new Error('Project not found');
   }
 
-  const idempotencyKey = input.idempotencyKey ?? fingerprint({ userId: input.userId, projectId: input.projectId, prompt: input.prompt, operation: input.operation, size: input.size, width: input.width, height: input.height, quality: input.quality, platform: input.platform });
+  const idempotencyKey = input.idempotencyKey ?? fingerprint({ userId: input.userId, projectId: input.projectId, prompt: input.prompt, operation: input.operation, size: input.size, width: input.width, height: input.height, quality: input.quality, platform: input.platform, referenceImageStoragePaths: input.referenceImageStoragePaths ?? [] });
   let planned;
   try {
     planned = await planGeneration(input);
@@ -49,7 +49,8 @@ export async function createGenerationJob(input: GenerationRequest & { platform?
       height: planned.height,
       quality: input.quality,
       platform: input.platform ?? null,
-      referenceImages: input.referenceImages ?? [],
+      referenceImages: input.referenceImageStoragePaths?.length ? [] : input.referenceImages ?? [],
+      referenceImageStoragePaths: input.referenceImageStoragePaths ?? [],
       watermark: planned.watermark,
       maxExportBytes: planned.maxExportBytes,
       safetyPolicyVersion: planned.safety.policyVersion,
