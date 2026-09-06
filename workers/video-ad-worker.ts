@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { downloadOpenRouterVideo, getOpenRouterVideo, submitOpenRouterVideo } from '@/core/providers/openrouter';
+import { generatePollinationsVideo } from '@/core/providers/pollinations';
 import { extractVideoFrame, processVideoOutput } from '@/server/video-processing';
 import { moderateImage } from '@/server/image-moderation';
 import { recordSafetyEvent } from '@/server/safety-events';
@@ -34,35 +35,43 @@ export async function processVideoAdJob(job: any) {
   const aspectRatio = typeof request.aspectRatio === 'string' ? request.aspectRatio : '16:9';
   const quality = request.videoQuality === 'high_end' ? 'high_end' : 'standard';
   const videoQuality = quality as 'standard' | 'high_end';
+  const provider = job.provider === 'pollinations' ? 'pollinations' : 'openrouter';
 
-  let externalJobId = typeof job.external_job_id === 'string' ? job.external_job_id : (typeof request.openrouterVideoJobId === 'string' ? request.openrouterVideoJobId : null);
-  if (!externalJobId) {
-    const submitted = await submitOpenRouterVideo({ model: job.model, prompt: job.prompt, durationSeconds, resolution, aspectRatio, generateAudio: false });
-    externalJobId = submitted.id ?? null;
-    if (!externalJobId) throw new Error(submitted.error || 'OpenRouter did not return a video job id');
-    const updatedRequest = { ...request, openrouterVideoJobId: externalJobId, openrouterPollingUrl: submitted.polling_url ?? null };
-    const { error } = await admin.from('generation_jobs').update({ external_job_id: externalJobId, request: updatedRequest }).eq('id', job.id);
-    if (error) throw new Error(`Failed to persist video provider job: ${error.message}`);
+  let externalJobId = typeof job.external_job_id === 'string' ? job.external_job_id : null;
+  let downloaded: { buffer: Buffer; mimeType: string };
+
+  if (provider === 'pollinations') {
+    downloaded = await generatePollinationsVideo({ model: job.model, prompt: job.prompt, durationSeconds });
+  } else {
+    externalJobId = externalJobId ?? (typeof request.openrouterVideoJobId === 'string' ? request.openrouterVideoJobId : null);
+    if (!externalJobId) {
+      const submitted = await submitOpenRouterVideo({ model: job.model, prompt: job.prompt, durationSeconds, resolution, aspectRatio, generateAudio: false });
+      externalJobId = submitted.id ?? null;
+      if (!externalJobId) throw new Error(submitted.error || 'OpenRouter did not return a video job id');
+      const updatedRequest = { ...request, openrouterVideoJobId: externalJobId, openrouterPollingUrl: submitted.polling_url ?? null };
+      const { error } = await admin.from('generation_jobs').update({ external_job_id: externalJobId, request: updatedRequest }).eq('id', job.id);
+      if (error) throw new Error(`Failed to persist video provider job: ${error.message}`);
+    }
+
+    let finalStatus: any = null;
+    const deadline = Date.now() + 9 * 60 * 1000;
+    while (Date.now() < deadline) {
+      const status = await getOpenRouterVideo(externalJobId);
+      finalStatus = status;
+      if (status.status === 'completed') break;
+      if (status.status === 'failed' || status.status === 'cancelled' || status.status === 'expired') throw new Error(status.error || `OpenRouter video job ${status.status}`);
+      await delay(30_000);
+    }
+    if (finalStatus?.status !== 'completed') throw new Error('Video provider job exceeded the worker polling timeout');
+    downloaded = await downloadOpenRouterVideo(externalJobId);
   }
 
-  let finalStatus: any = null;
-  const deadline = Date.now() + 9 * 60 * 1000;
-  while (Date.now() < deadline) {
-    const status = await getOpenRouterVideo(externalJobId);
-    finalStatus = status;
-    if (status.status === 'completed') break;
-    if (status.status === 'failed' || status.status === 'cancelled' || status.status === 'expired') throw new Error(status.error || `OpenRouter video job ${status.status}`);
-    await delay(30_000);
-  }
-  if (finalStatus?.status !== 'completed') throw new Error('Video provider job exceeded the worker polling timeout');
-
-  const downloaded = await downloadOpenRouterVideo(externalJobId);
   const frame = await extractVideoFrame(downloaded.buffer);
   const frameBase64 = frame.toString('base64');
   const moderation = await moderateImage({ mimeType: 'image/jpeg', base64: frameBase64, userId: job.user_id, jobId: job.id, stage: 'generation' });
   if (moderation.decision !== 'allow') {
     const safetyCode = moderation.decision === 'block' ? 'SAFETY_BLOCKED' : 'SAFETY_REVIEW_REQUIRED';
-    await recordSafetyEvent({ userId: job.user_id, jobId: job.id, stage: 'generation', decision: moderation.decision, reasons: moderation.reasons, score: moderation.score, providerId: 'openrouter', modelKey: job.model });
+    await recordSafetyEvent({ userId: job.user_id, jobId: job.id, stage: 'generation', decision: moderation.decision, reasons: moderation.reasons, score: moderation.score, providerId: provider, modelKey: job.model });
     await admin.from('generation_jobs').update({ status: 'failed', error_code: safetyCode, error_message: moderation.reasons.join('; ') || 'Generated video did not pass the existing safety filter', completed_at: new Date().toISOString(), request: { ...request, moderationDecision: moderation.decision } }).eq('id', job.id);
     if (job.reserved_credits > 0) {
       const { error } = await admin.rpc('refund_generation_credits', { p_user_id: job.user_id, p_amount: job.reserved_credits, p_idempotency_key: `${job.idempotency_key}:video-safety` });
@@ -92,7 +101,7 @@ export async function processVideoAdJob(job: any) {
     metadata: {
       job_id: job.id,
       media_type: 'video',
-      provider: 'openrouter',
+      provider,
       model: job.model,
       external_id: externalJobId,
       duration_seconds: durationSeconds,
@@ -125,7 +134,7 @@ export async function processVideoAdJob(job: any) {
   const { error: finalizeError } = await admin.rpc('finalize_generation_credits', { p_user_id: job.user_id, p_amount: job.reserved_credits, p_idempotency_key: job.idempotency_key });
   if (finalizeError) throw new Error(`Credit finalization failed: ${finalizeError.message}`);
 
-  const { data: completed, error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', output_path: storagePath, external_job_id: externalJobId, completed_at: new Date().toISOString(), request: { ...request, actualProvider: 'openrouter', actualModel: job.model, moderationDecision: moderation.decision, finalByteSize: processed.byteSize, audio: false } }).eq('id', job.id).select('*').single();
+  const { data: completed, error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', output_path: storagePath, external_job_id: externalJobId, completed_at: new Date().toISOString(), request: { ...request, actualProvider: provider, actualModel: job.model, moderationDecision: moderation.decision, finalByteSize: processed.byteSize, audio: false } }).eq('id', job.id).select('*').single();
   if (completeError) throw new Error(`Video job completion failed: ${completeError.message}`);
   return completed ?? job;
 }

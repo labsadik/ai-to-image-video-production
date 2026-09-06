@@ -7,11 +7,20 @@ import { PolicySafetyEngine, SafetyPolicyViolation } from '@/core/safety';
 import { getActiveSafetyPolicyVersion, recordSafetyEvent } from '@/server/safety-events';
 import { canUseVideoAd, videoAdCredits, VIDEO_AD_LIMITS, type VideoAdQuality } from '@/config/media-features';
 import { resolveOpenRouterVideoModel } from '@/core/providers/openrouter';
+import { resolvePollinationsVideoModel } from '@/core/providers/pollinations';
 
 export const runtime = 'nodejs';
 const safety = new PolicySafetyEngine();
 const qualities = new Set<VideoAdQuality>(['standard', 'high_end']);
 const ratios = new Set(['16:9', '9:16', '1:1', '4:3', '3:4']);
+
+function resolveVideoProvider() {
+  const configured = process.env.SOLAMENTIS_VIDEO_PROVIDER?.trim().toLowerCase();
+  if (configured === 'pollinations' || configured === 'openrouter') return configured;
+  if (process.env.POLLINATIONS_API_KEY) return 'pollinations';
+  if (process.env.OPENROUTER_API_KEY) return 'openrouter';
+  throw new Error('No video provider is configured. Set POLLINATIONS_API_KEY or OPENROUTER_API_KEY.');
+}
 
 export async function POST(request: Request) {
   try {
@@ -43,9 +52,13 @@ export async function POST(request: Request) {
       await recordSafetyEvent({ userId: user.id, stage: 'prompt_validation', decision: safetyResult.decision, reasons: safetyResult.reasons, score: safetyResult.score, policyVersion });
       throw new SafetyPolicyViolation(safetyResult);
     }
+
+    const provider = resolveVideoProvider();
     const credits = videoAdCredits(plan, quality);
     const resolution = quality === 'high_end' ? '1080p' : '720p';
-    const model = await resolveOpenRouterVideoModel(duration, resolution);
+    const model = provider === 'pollinations'
+      ? await resolvePollinationsVideoModel(resolution)
+      : await resolveOpenRouterVideoModel(duration, resolution);
     const idempotencyKey = `video-ad:${randomUUID()}`;
 
     const { data: job, error: insertError } = await admin.from('generation_jobs').insert({
@@ -56,7 +69,7 @@ export async function POST(request: Request) {
       prompt,
       size: aspectRatio,
       quality: quality === 'high_end' ? 'premium' : 'standard',
-      provider: 'openrouter',
+      provider,
       model,
       reserved_credits: 0,
       idempotency_key: idempotencyKey,
@@ -72,12 +85,13 @@ export async function POST(request: Request) {
         watermark: plan === 'free',
         safetyPolicyVersion: policyVersion,
         safetyApplied: true,
+        videoProvider: provider,
       },
     }).select('*').single();
     if (insertError || !job) throw new Error(insertError?.message ?? 'Unable to create video ad job');
 
     try {
-      await recordSafetyEvent({ userId: user.id, jobId: job.id, stage: 'prompt_validation', decision: 'allow', reasons: [], score: safetyResult.score, policyVersion, providerId: 'openrouter', modelKey: model });
+      await recordSafetyEvent({ userId: user.id, jobId: job.id, stage: 'prompt_validation', decision: 'allow', reasons: [], score: safetyResult.score, policyVersion, providerId: provider, modelKey: model });
       const { data: reserved, error: reserveError } = await admin.rpc('reserve_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: idempotencyKey });
       if (reserveError) throw new Error(`Credit reservation failed: ${reserveError.message}`);
       if (!reserved) throw new Error('Insufficient credits');
@@ -85,7 +99,7 @@ export async function POST(request: Request) {
       if (attachError || !reservedJob) throw new Error(attachError?.message ?? 'Unable to attach reserved credits');
       const { error: queueError } = await admin.rpc('enqueue_generation_job', { p_job_id: job.id });
       if (queueError) throw new Error(`Queue enqueue failed: ${queueError.message}`);
-      return NextResponse.json({ jobId: job.id, status: 'queued', provider: 'openrouter', model, durationSeconds: duration, quality, credits, safetyApplied: true });
+      return NextResponse.json({ jobId: job.id, status: 'queued', provider, model, durationSeconds: duration, quality, credits, safetyApplied: true });
     } catch (error) {
       await admin.from('generation_jobs').update({ status: 'failed', error_code: 'VIDEO_REQUEST_FAILED', error_message: error instanceof Error ? error.message : 'Video request failed', completed_at: new Date().toISOString() }).eq('id', job.id);
       await admin.rpc('refund_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: idempotencyKey });

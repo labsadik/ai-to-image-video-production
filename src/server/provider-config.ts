@@ -1,8 +1,9 @@
 import { getSupabaseAdmin } from './supabase-admin';
 import type { QualityKey } from '@/config/providers';
 import { openRouterRuntimeConfig, resolveOpenRouterImageModel } from '@/core/providers/openrouter';
+import { pollinationsRuntimeConfig, resolvePollinationsImageModel } from '@/core/providers/pollinations';
 
-export type ProviderProtocol = 'google_gemini' | 'openai_images' | 'generic_json' | 'huggingface_image' | 'huggingface_vlm' | 'huggingface_image_classification' | 'openrouter_images';
+export type ProviderProtocol = 'google_gemini' | 'openai_images' | 'generic_json' | 'huggingface_image' | 'huggingface_vlm' | 'huggingface_image_classification' | 'openrouter_images' | 'pollinations_images';
 
 export interface RuntimeProviderConfig {
   provider: string;
@@ -62,6 +63,8 @@ export async function resolveProviderConfig(providerId: string, modelId: string)
 
 async function resolveEnvSelectedProvider(quality: QualityKey, operation: 'generateImage' | 'editImage' = 'generateImage'): Promise<RuntimeProviderConfig | null> {
   const selected = process.env.SOLAMENTIS_ACTIVE_PROVIDER?.trim().toLowerCase()
+    || process.env.SOLAMENTIS_IMAGE_PROVIDER?.trim().toLowerCase()
+    || (process.env.POLLINATIONS_API_KEY ? 'pollinations' : '')
     || (process.env.OPENROUTER_API_KEY ? 'openrouter' : '');
   if (!selected) return null;
 
@@ -69,6 +72,12 @@ async function resolveEnvSelectedProvider(quality: QualityKey, operation: 'gener
     if (operation !== 'generateImage') return null;
     const model = await resolveOpenRouterImageModel();
     return openRouterRuntimeConfig(model);
+  }
+
+  if (selected === 'pollinations') {
+    if (operation !== 'generateImage') return null;
+    const model = await resolvePollinationsImageModel();
+    return pollinationsRuntimeConfig(model);
   }
 
   const admin = getSupabaseAdmin();
