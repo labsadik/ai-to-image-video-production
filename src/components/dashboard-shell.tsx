@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, CreditCard, FileSearch, FolderKanban, History, ImagePlus, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, Sparkles, Video, X } from 'lucide-react';
+import { Bell, CreditCard, FolderKanban, History, ImagePlus, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, Sparkles, Video, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 const baseNav = [
