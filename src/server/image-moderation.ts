@@ -16,9 +16,26 @@ export interface ModerationResult {
 type ModerationRules = { blockPatterns?: string[]; reviewPatterns?: string[] };
 
 type HuggingFaceProvider =
-  | 'auto' | 'baseten' | 'cerebras' | 'cohere' | 'deepinfra' | 'fal-ai' | 'featherless-ai'
-  | 'fireworks-ai' | 'groq' | 'hf-inference' | 'novita' | 'nscale' | 'openai' | 'ovhcloud'
-  | 'publicai' | 'replicate' | 'sambanova' | 'scaleway' | 'together' | 'zai-org';
+  | 'auto'
+  | 'baseten'
+  | 'cerebras'
+  | 'cohere'
+  | 'deepinfra'
+  | 'fal-ai'
+  | 'featherless-ai'
+  | 'fireworks-ai'
+  | 'groq'
+  | 'hf-inference'
+  | 'novita'
+  | 'nscale'
+  | 'openai'
+  | 'ovhcloud'
+  | 'publicai'
+  | 'replicate'
+  | 'sambanova'
+  | 'scaleway'
+  | 'together'
+  | 'zai-org';
 
 function normalizeDecision(value: unknown): SafetyDecision {
   return value === 'block' || value === 'review' || value === 'allow' ? value : 'review';
@@ -63,7 +80,6 @@ async function moderateWithHuggingFace(input: { apiKey: string; model: string; m
       messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:${input.mimeType};base64,${input.base64}` } }] }],
       max_tokens: 256,
       temperature: 0,
-      provider: resolveHuggingFaceProvider(input.provider),
     }, { signal: controller.signal });
     const text = out.choices?.[0]?.message?.content;
     if (typeof text !== 'string' || !text.trim()) throw new Error('Hugging Face moderation model returned no classification');
