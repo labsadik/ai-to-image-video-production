@@ -18,10 +18,35 @@ export class HuggingFaceImageProviderAdapter implements ProviderAdapter {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
     try {
-      // The configured Hugging Face Inference Providers policy is intentionally left to the
-      // account/router so changing providers remains configuration-only in Solamentis.
+      if (request.operation === 'editImage') {
+        const reference = request.referenceImages?.[0];
+        if (!reference) throw new Error('An input image is required for editing');
+        const data = Buffer.from(reference.base64, 'base64');
+        const image = await client.imageToImage({
+          model: request.model,
+          provider: this.config.provider as 'auto' | 'hf-inference' | 'fal-ai',
+          inputs: data,
+          parameters: {
+            prompt: request.prompt,
+            target_size: { width: request.width, height: request.height },
+          },
+        }, { signal: controller.signal }) as Blob;
+        const buffer = Buffer.from(await image.arrayBuffer());
+        return {
+          externalId: crypto.randomUUID(),
+          mimeType: image.type || 'image/png',
+          base64: buffer.toString('base64'),
+          providerMetadata: {
+            protocol: 'huggingface_image_to_image',
+            inferenceProvider: this.config.provider,
+            model: request.model,
+          },
+        };
+      }
+
       const image = await client.textToImage({
         model: request.model,
+        provider: this.config.provider as 'auto' | 'hf-inference' | 'fal-ai',
         inputs: request.prompt,
         parameters: {
           width: request.width,
@@ -51,7 +76,7 @@ export class HuggingFaceImageProviderAdapter implements ProviderAdapter {
     if (!model) return { ok: true, latencyMs: Date.now() - started, message: 'Model not supplied for Hugging Face health check' };
     try {
       const client = new InferenceClient(apiKey);
-      await client.textToImage({ model, inputs: 'simple abstract test image' }, {
+      await client.textToImage({ model, provider: this.config.provider as 'auto' | 'hf-inference' | 'fal-ai', inputs: 'simple abstract test image' }, {
         signal: AbortSignal.timeout(Math.min(this.config.timeoutMs, 15000)),
       });
       return { ok: true, latencyMs: Date.now() - started };
