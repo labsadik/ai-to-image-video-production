@@ -37,36 +37,35 @@ end;
 $$;
 
 revoke all on function public.sync_auth_profile() from public, anon, authenticated;
-
 drop trigger if exists on_auth_user_profile_sync on auth.users;
 create trigger on_auth_user_profile_sync
 after insert or update of email, phone, raw_user_meta_data on auth.users
 for each row execute function public.sync_auth_profile();
 
-create or replace function public.touch_updated_at()
+create or replace function public.touch_profile_updated_at()
 returns trigger language plpgsql set search_path = public as $$
 begin new.updated_at = now(); return new; end; $$;
+revoke all on function public.touch_profile_updated_at() from public, anon, authenticated;
+drop trigger if exists profiles_touch_updated_at on public.profiles;
+create trigger profiles_touch_updated_at before update on public.profiles for each row execute function public.touch_profile_updated_at();
 
- drop trigger if exists profiles_touch_updated_at on public.profiles;
- create trigger profiles_touch_updated_at before update on public.profiles for each row execute function public.touch_updated_at();
-
- create or replace function public.write_profile_audit()
- returns trigger
- language plpgsql
- security definer
- set search_path = public
- as $$
- begin
-   insert into public.audit_logs(user_id, actor_type, action, resource_type, resource_id, metadata)
-   values (new.id, 'user', 'profile.updated', 'profile', new.id,
-     jsonb_build_object('country_code', new.country_code, 'locale', new.locale));
-   return new;
- end;
- $$;
- revoke all on function public.write_profile_audit() from public, anon, authenticated;
- drop trigger if exists profiles_audit on public.profiles;
- create trigger profiles_audit after update of full_name, phone, country_code, country_name, locale, avatar_url on public.profiles
- for each row execute function public.write_profile_audit();
+create or replace function public.write_profile_audit()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.audit_logs(user_id, actor_type, action, resource_type, resource_id, metadata)
+  values (new.id, 'user', 'profile.updated', 'profile', new.id,
+    jsonb_build_object('country_code', new.country_code, 'locale', new.locale));
+  return new;
+end;
+$$;
+revoke all on function public.write_profile_audit() from public, anon, authenticated;
+drop trigger if exists profiles_audit on public.profiles;
+create trigger profiles_audit after update of full_name, phone, country_code, country_name, locale, avatar_url on public.profiles
+for each row execute function public.write_profile_audit();
 
 create policy "profiles own update" on public.profiles
 for update to authenticated
