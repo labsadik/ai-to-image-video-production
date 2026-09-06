@@ -95,6 +95,9 @@ async function resolveEnvSelectedProvider(quality: QualityKey, operation: 'gener
 }
 
 export async function resolveLiveProviderModel(planId: string, quality: QualityKey): Promise<RuntimeProviderConfig & { fallbackProviderId?: string; fallbackModelId?: string }> {
+  const envSelected = await resolveEnvSelectedProvider(quality, 'generateImage');
+  if (envSelected) return envSelected;
+
   const admin = getSupabaseAdmin();
   const { data: route, error: routeError } = await admin
     .from('ai_plan_routes')
@@ -105,8 +108,7 @@ export async function resolveLiveProviderModel(planId: string, quality: QualityK
   if (routeError) throw new Error(`AI route lookup failed: ${routeError.message}`);
   if (!route?.enabled) throw new Error(`No active AI route for plan=${planId}, quality=${quality}`);
 
-  const envSelected = await resolveEnvSelectedProvider(quality, 'generateImage');
-  const primary = envSelected ?? await resolveProviderConfig(route.provider_id, route.model_id);
+  const primary = await resolveProviderConfig(route.provider_id, route.model_id);
   return { ...primary, fallbackProviderId: route.fallback_provider_id ?? undefined, fallbackModelId: route.fallback_model_id ?? undefined };
 }
 
