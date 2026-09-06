@@ -14,8 +14,10 @@ export interface ProvenanceRecord {
 }
 
 function secret() {
-  const value = process.env.SOLAMENTIS_PROVENANCE_SECRET?.trim();
-  if (!value) throw new Error('SOLAMENTIS_PROVENANCE_SECRET is required for protected image provenance');
+  const value = process.env.SOLAMENTIS_PROVENANCE_SECRET?.trim()
+    || process.env.SUPABASE_SECRET_KEY?.trim()
+    || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!value) throw new Error('A server-only provenance secret is required for protected image provenance');
   return value;
 }
 
