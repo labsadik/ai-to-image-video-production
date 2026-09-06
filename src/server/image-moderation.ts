@@ -1,5 +1,3 @@
-import 'server-only';
-
 import { GoogleGenAI } from '@google/genai';
 import { getSupabaseAdmin } from './supabase-admin';
 import { getProviderSecret } from './provider-secrets';
