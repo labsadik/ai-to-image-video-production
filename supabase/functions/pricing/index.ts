@@ -12,7 +12,11 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data: region } = await admin.from("pricing_regions").select("country_code,currency,locale").eq("country_code", country).eq("active", true).maybeSingle();
   const effective = region?.country_code ?? "US";
-  const { data: prices, error } = await admin.from("plan_prices").select("plan_id,country_code,currency,unit_amount_minor,active").eq("country_code", effective).eq("active", true).order("plan_id");
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-  return Response.json({ country: effective, currency: region?.currency ?? "USD", locale: region?.locale ?? "en-US", prices: prices ?? [] });
+  const [{ data: prices, error: pricesError }, { data: creditPacks, error: creditPacksError }] = await Promise.all([
+    admin.from("plan_prices").select("plan_id,country_code,currency,unit_amount_minor,active").eq("country_code", effective).eq("active", true).order("plan_id"),
+    admin.from("credit_product_prices").select("product_id,country_code,currency,unit_amount_minor,active,credit_products!inner(id,display_name,credits,sort_order,active)").eq("country_code", effective).eq("active", true).order("product_id"),
+  ]);
+  if (pricesError) return Response.json({ error: pricesError.message }, { status: 500 });
+  if (creditPacksError) return Response.json({ error: creditPacksError.message }, { status: 500 });
+  return Response.json({ country: effective, currency: region?.currency ?? "USD", locale: region?.locale ?? "en-US", prices: prices ?? [], creditPacks: creditPacks ?? [] });
 });
