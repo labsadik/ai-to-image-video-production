@@ -1,93 +1,170 @@
 'use client';
 
+import type { ChangeEvent, FormEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { Camera, CircleHelp, FileSearch, ImagePlus, Loader2, Sparkles, Video } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Camera, CircleHelp, Clock3, Download, FileSearch, ImagePlus, Loader2, Maximize2, Pencil, Sparkles, Trash2, Video, XCircle } from 'lucide-react';
+import { PLATFORM_SPECS, type PlatformId } from '@/config/platforms';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ImageUpload, type UploadedReference } from '@/components/image-upload';
 
-const examples = {
-  image: { bad: 'A nice car', good: 'Luxury black sports car outside a glass villa at sunset, cinematic lighting, realistic reflections, premium automotive advertising photography, 16:9.', super: 'Subject: luxury black sports car. Environment: modern glass villa at golden hour. Lighting: warm sunset rim light plus soft studio fill. Camera: low 35mm automotive commercial look. Composition: hero product centered with negative space for headline. Materials: glossy paint, realistic reflections. Mood: premium, elegant, high-end. Constraints: no people, no logos, clean background.' },
-  video: { bad: 'Make an ad for shoes', good: 'Create an 8-second premium running-shoe advertisement. Show the shoe rotating slowly above a wet reflective studio floor, dramatic soft lighting, close product details, clean background, cinematic commercial motion, no people, no text, no audio.', super: 'Product: premium white running shoe. Duration: 8 seconds. Scene: dark luxury studio with reflective wet floor. Action: shoe enters frame, rotates 180 degrees, camera pushes in, final hero angle holds for 1 second. Camera: controlled commercial dolly plus macro detail. Lighting: soft key, subtle rim, polished reflections. Motion: smooth and physically plausible. Mood: premium athletic performance. Constraints: no people, no text, no logos, no audio.' },
-  analysis: { bad: 'Is this AI?', good: 'Analyze this image for likely AI generation, digital manipulation, compositing, camera-original characteristics, metadata/provenance clues, compression artifacts, and visual inconsistencies. Return confidence and evidence.', super: 'Perform a deep forensic authenticity analysis. Estimate AI-generation likelihood, editing/manipulation likelihood, camera-original likelihood, and confidence. Examine texture/frequency anomalies, local detail consistency, resampling/compression clues, metadata when available, compositing indicators, and signs associated with AI image pipelines. Return evidence, uncertainty, and limitations. Do not claim certainty.' }
-} as const;
-
+type Tab = 'image' | 'analysis' | 'video';
+type Quality = 'preview' | 'standard' | 'premium';
 type AnalysisLevel = 'basic' | 'medium' | 'hard';
 type VideoQuality = 'standard' | 'high_end';
+type Job = { id:string; status:string; operation:string; prompt:string; size:string; quality:Quality; provider:string|null; model:string|null; output_path?:string|null; error_code:string|null; error_message:string|null; created_at:string; completed_at:string|null; project_id?:string|null; request:Record<string,unknown> };
+type Output = { id?:string; variant:'master'; storage_path:string; mime_type:string; width:number; height:number; byte_size:number; url:string|null };
+type ApiResponse = { job?:Job; output?:Output|null; error?:string };
+
+const platformLabels:Record<PlatformId,string>={youtube_thumbnail:'YouTube Thumbnail',instagram_post:'Instagram Post',instagram_story:'Instagram Story',facebook_post:'Facebook Post',facebook_cover:'Facebook Cover',pinterest_pin:'Pinterest Pin',linkedin_post:'LinkedIn Post',x_post:'X Post',ad_creative:'Ad Creative',poster:'Poster',website_banner:'Website Banner'};
+const statusCopy:Record<string,string>={queued:'Waiting in the protected generation queue.',processing:'The configured provider is creating your media.',succeeded:'The master output is ready and saved to history.',failed:'The generation could not be completed.',cancelled:'This generation was cancelled.'};
 
 export default function MediaStudioPage() {
-  const [tab, setTab] = useState<'image' | 'analysis' | 'video'>('image');
-  const [prompt, setPrompt] = useState('');
-  const [imageQuality, setImageQuality] = useState('standard');
-  const [analysisLevel, setAnalysisLevel] = useState<AnalysisLevel>('basic');
-  const [message, setMessage] = useState('');
-  const [result, setResult] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<Record<string, unknown> | null>(null);
-  const [reference, setReference] = useState<UploadedReference | null>(null);
-  const [analysisFile, setAnalysisFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [duration, setDuration] = useState(8);
-  const [videoQuality, setVideoQuality] = useState<VideoQuality>('standard');
-  const [helpOpen, setHelpOpen] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [tab,setTab]=useState<Tab>('image');
+  const [prompt,setPrompt]=useState('');
+  const [platform,setPlatform]=useState<PlatformId>('youtube_thumbnail');
+  const [quality,setQuality]=useState<Quality>('standard');
+  const [reference,setReference]=useState<UploadedReference|null>(null);
+  const [analysisFile,setAnalysisFile]=useState<File|null>(null);
+  const [analysis,setAnalysis]=useState<Record<string,unknown>|null>(null);
+  const [analysisLevel,setAnalysisLevel]=useState<AnalysisLevel>('basic');
+  const [duration,setDuration]=useState(8);
+  const [videoQuality,setVideoQuality]=useState<VideoQuality>('standard');
+  const [aspectRatio,setAspectRatio]=useState('16:9');
+  const [job,setJob]=useState<Job|null>(null);
+  const [output,setOutput]=useState<Output|null>(null);
+  const [message,setMessage]=useState('');
+  const [loading,setLoading]=useState(false);
+  const [loadingHistory,setLoadingHistory]=useState(false);
+  const [historyId,setHistoryId]=useState<string|null>(null);
+  const [editPrompt,setEditPrompt]=useState('');
+  const [editing,setEditing]=useState(false);
+  const [downloading,setDownloading]=useState(false);
+  const [helpOpen,setHelpOpen]=useState(false);
+  const pollRef=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const spec=PLATFORM_SPECS[platform];
+  const active=job?.status==='queued'||job?.status==='processing';
 
-  useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
-
-  async function pollJob(id: string, video = false) {
-    const status = await fetch(`${video ? '/api/video-ad/' : '/api/generate/'}${id}`, { cache: 'no-store' }).then(r => r.json()) as { job?: { status: string; error_message?: string | null }; output?: { url?: string | null } | null };
-    if (status.job?.status === 'succeeded' && status.output?.url) { setResult(status.output.url); setMessage('Ready.'); setLoading(false); return; }
-    if (status.job?.status === 'failed' || status.job?.status === 'cancelled') { setMessage(status.job.error_message || 'Generation failed.'); setLoading(false); return; }
-    pollRef.current = setTimeout(() => void pollJob(id, video), video ? 5000 : 1800);
-  }
-
-  async function submitImage() {
-    setLoading(true); setMessage(''); setResult(null);
+  async function loadJob(id:string,isVideo=false){
     try {
-      const response = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ operation: 'generateImage', prompt: prompt.trim(), platform: 'ad_creative', quality: imageQuality === 'premium' ? 'premium' : imageQuality === 'standard' ? 'standard' : 'preview', width: 1024, height: 1024, size: '1024x1024', referenceImageStoragePaths: reference?.path ? [reference.path] : [] }) });
-      const data = await response.json() as { jobId?: string; error?: string };
-      if (!response.ok || !data.jobId) throw new Error(data.error || 'Image generation could not be started.');
-      await pollJob(data.jobId);
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Image generation failed.'); setLoading(false); }
+      const response=await fetch(`${isVideo?'/api/video-ad/':'/api/generate/'}${id}`,{cache:'no-store'});
+      const data=await response.json() as ApiResponse;
+      if(!response.ok||!data.job) throw new Error(data.error||'Unable to read job status.');
+      setJob(data.job); setOutput(data.output??null);
+      return data.job.status;
+    } catch(error) { setMessage(error instanceof Error?error.message:'Unable to read job status.'); return null; }
   }
 
-  async function submitAnalysis() {
-    if (!analysisFile) { setMessage('Choose an image to analyze. This file is sent directly to the analyzer and is not passed through the generation upload safety gate.'); return; }
-    setLoading(true); setMessage(''); setAnalysis(null);
+  async function loadHistory(id:string){
+    setLoadingHistory(true); setMessage('');
     try {
-      const form = new FormData(); form.append('image', analysisFile); form.append('level', analysisLevel);
-      const response = await fetch('/api/analyze-image', { method: 'POST', body: form });
-      const data = await response.json() as { result?: Record<string, unknown>; error?: string };
-      if (!response.ok || !data.result) throw new Error(data.error || 'Image analysis failed.');
-      setAnalysis(data.result); setMessage('Analysis complete.');
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Image analysis failed.'); }
-    finally { setLoading(false); }
+      const response=await fetch(`/api/history/${id}`,{cache:'no-store'});
+      const data=await response.json() as ApiResponse & {project?:{name:string}|null};
+      if(!response.ok||!data.job) throw new Error(data.error||'Unable to open saved media.');
+      const saved=data.job.request??{};
+      const op=data.job.operation;
+      const nextTab:Tab=op==='analyzeImage'?'analysis':op==='generateVideoAd'?'video':'image';
+      setTab(nextTab); setHistoryId(id); setJob(data.job); setOutput(data.output??null); setPrompt(data.job.prompt);
+      if(typeof saved.platform==='string'&&saved.platform in PLATFORM_SPECS) setPlatform(saved.platform as PlatformId);
+      if(data.job.quality==='preview'||data.job.quality==='standard'||data.job.quality==='premium') setQuality(data.job.quality);
+      if(typeof saved.analysisLevel==='string'&&['basic','medium','hard'].includes(saved.analysisLevel)) setAnalysisLevel(saved.analysisLevel as AnalysisLevel);
+      if(saved.analysisResult&&typeof saved.analysisResult==='object') setAnalysis(saved.analysisResult as Record<string,unknown>);
+      if(typeof saved.durationSeconds==='number') setDuration(saved.durationSeconds);
+      if(saved.videoQuality==='high_end'||saved.videoQuality==='standard') setVideoQuality(saved.videoQuality as VideoQuality);
+      if(typeof saved.aspectRatio==='string') setAspectRatio(saved.aspectRatio);
+    } catch(error){ setMessage(error instanceof Error?error.message:'Unable to open saved media.'); }
+    finally { setLoadingHistory(false); }
   }
 
-  async function submitVideo() {
-    setLoading(true); setMessage(''); setResult(null);
+  useEffect(()=>{const id=new URLSearchParams(window.location.search).get('history'); if(id) void loadHistory(id);},[]);
+  useEffect(()=>()=>{if(pollRef.current) clearTimeout(pollRef.current); if(reference?.previewUrl) URL.revokeObjectURL(reference.previewUrl);},[reference?.previewUrl]);
+
+  useEffect(()=>{
+    if(!job?.id||!active) return;
+    const isVideo=job.operation==='generateVideoAd';
+    let cancelled=false;
+    const poll=async()=>{const status=await loadJob(job.id,isVideo); if(!cancelled&&status&&['queued','processing'].includes(status)) pollRef.current=setTimeout(poll,isVideo?4000:1200);};
+    void poll(); return()=>{cancelled=true;if(pollRef.current)clearTimeout(pollRef.current);};
+  },[job?.id,job?.status]);
+
+  async function submitImage(event:FormEvent){
+    event.preventDefault(); setLoading(true); setMessage(''); setJob(null); setOutput(null); setHistoryId(null); setAnalysis(null);
     try {
-      const response = await fetch('/api/video-ad', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ prompt: prompt.trim(), durationSeconds: duration, quality: videoQuality, aspectRatio: '16:9' }) });
-      const data = await response.json() as { jobId?: string; error?: string; model?: string };
-      if (!response.ok || !data.jobId) throw new Error(data.error || 'Video ad could not be started.');
-      setMessage(`Queued · OpenRouter test model ${data.model ?? ''}`); await pollJob(data.jobId, true);
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Video generation failed.'); setLoading(false); }
+      const response=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({operation:'generateImage',prompt:prompt.trim(),platform,quality,size:`${spec.width}x${spec.height}`,width:spec.width,height:spec.height,referenceImageStoragePaths:reference?.path?[reference.path]:[]})});
+      const data=await response.json() as {jobId?:string;error?:string};
+      if(!response.ok||!data.jobId) throw new Error(data.error||'Image generation could not be started.');
+      setJob({id:data.jobId,status:'queued',operation:'generateImage',prompt:prompt.trim(),size:`${spec.width}x${spec.height}`,quality,provider:null,model:null,error_code:null,error_message:null,created_at:new Date().toISOString(),completed_at:null,request:{platform}}); setMessage('Image generation queued.');
+      await loadJob(data.jobId);
+    } catch(error){setMessage(error instanceof Error?error.message:'Image generation failed.');}
+    finally{setLoading(false);}
   }
 
-  const example = examples[tab];
-  return <div className="space-y-6 sm:space-y-8">
-    <section className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-400">AI Studio</p><h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Create, analyze, and test media.</h1><button type="button" onClick={() => setHelpOpen(true)} className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-950"><CircleHelp className="size-4"/> Your prompt matters — better prompts produce better results.</button></div><div className="rounded-xl bg-slate-950 px-4 py-3 text-xs font-medium text-white">OpenRouter test mode · one server API key</div></section>
-    <div className="grid grid-cols-3 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">{([['image', ImagePlus, 'Image generation'], ['analysis', FileSearch, 'Image analysis'], ['video', Video, 'Video ad']] as const).map(([id, Icon, label]) => <button key={id} type="button" onClick={() => { setTab(id); setMessage(''); setAnalysis(null); setResult(null); }} className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-2 text-xs font-semibold sm:text-sm ${tab===id?'bg-slate-950 text-white':'text-slate-500 hover:bg-slate-50'}`}><Icon className="size-4"/>{label}</button>)}</div>
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,520px)]"><Card><CardHeader><div className="flex items-center gap-3">{tab==='image'?<Sparkles className="size-5"/>:tab==='analysis'?<Camera className="size-5"/>:<Video className="size-5"/>}<div><p className="text-sm font-semibold">{tab==='image'?'Image generation':tab==='analysis'?'Image authenticity analysis':'Silent video ad generation'}</p><p className="text-xs text-slate-400">Existing plans, credits, provider routing, and safety rules remain authoritative.</p></div></div></CardHeader><CardBody className="space-y-5">
-      {tab==='image'&&<><ImageUpload current={reference} onChange={setReference}/><label className="block text-sm font-medium">Quality<select value={imageQuality} onChange={e=>setImageQuality(e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3 py-3"><option value="preview">Preview · existing plan pricing</option><option value="standard">Standard · existing plan pricing</option><option value="premium">Premium · existing plan pricing</option></select></label></>}
-      {tab==='analysis'&&<><label className="block text-sm font-medium">Image file<input type="file" accept="image/*" onChange={e=>setAnalysisFile(e.target.files?.[0]??null)} className="mt-2 block w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"/></label><label className="block text-sm font-medium">Analysis depth<select value={analysisLevel} onChange={e=>setAnalysisLevel(e.target.value as AnalysisLevel)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3 py-3"><option value="basic">Basic · 2 credits</option><option value="medium">Medium · 5 credits</option><option value="hard">Hard · 12 credits</option></select></label><p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500">Image analysis does not use the generation safety filter. It accepts any image for forensic analysis.</p></>}
-      {tab==='video'&&<div className="grid gap-4 sm:grid-cols-2"><label className="block text-sm font-medium">Duration<select value={duration} onChange={e=>setDuration(Number(e.target.value))} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3 py-3">{[3,4,5,6,8,10,12,15,20,30].map(v=><option key={v} value={v}>{v} seconds</option>)}</select></label><label className="block text-sm font-medium">Quality<select value={videoQuality} onChange={e=>setVideoQuality(e.target.value as VideoQuality)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3 py-3"><option value="standard">Standard Ad · 9 credits</option><option value="high_end">High-End Ad · 25 credits</option></select></label></div>}
-      {tab!=='analysis'&&<label className="block text-sm font-medium">Prompt<textarea required minLength={3} rows={9} value={prompt} onChange={e=>setPrompt(e.target.value)} className="mt-2 min-h-40 w-full resize-y rounded-2xl border border-slate-200 px-4 py-3.5 leading-6" placeholder={tab==='video'?'Describe product, motion, camera, scene, lighting, timing, and constraints.':'Describe subject, composition, lighting, style, and constraints.'}/></label>}
-      {message&&<div role="status" className="rounded-xl bg-slate-100 p-3 text-sm text-slate-700">{message}</div>}
-      <Button type="button" disabled={loading || (tab!=='analysis'&&prompt.trim().length<3)} loading={loading} className="w-full" onClick={() => void (tab==='image'?submitImage():tab==='analysis'?submitAnalysis():submitVideo())}>{loading?'Working…':tab==='image'?'Generate image':tab==='analysis'?'Analyze image':`Generate ${duration}s video ad`}</Button>
-    </CardBody></Card>
-    <Card><CardHeader><p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-400">Result</p></CardHeader><CardBody>{result&&tab==='image'&&<img src={result} alt="Generated image" className="w-full rounded-2xl border border-slate-200 object-contain"/>}{result&&tab==='video'&&<video src={result} controls playsInline className="w-full rounded-2xl border border-slate-200"/>}{analysis&&<pre className="max-h-[620px] overflow-auto whitespace-pre-wrap rounded-2xl bg-slate-950 p-4 text-xs leading-5 text-white">{JSON.stringify(analysis,null,2)}</pre>}{!result&&!analysis&&<div className="grid min-h-[420px] place-items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"><div><Loader2 className={`mx-auto size-8 text-slate-300 ${loading?'animate-spin':''}`}/><p className="mt-3 text-sm font-semibold text-slate-600">Your result appears here</p></div></div>}</CardBody></Card></div>
-    {helpOpen&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" onMouseDown={()=>setHelpOpen(false)}><div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl" onMouseDown={e=>e.stopPropagation()}><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Prompt examples</h2><p className="mt-1 text-sm text-slate-500">Better prompts give the model more useful instructions.</p></div><button type="button" onClick={()=>setHelpOpen(false)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">Close</button></div><div className="mt-6 space-y-4"><Example title="Bad prompt" value={example.bad}/><Example title="Good prompt" value={example.good}/><Example title="Super prompt" value={example.super}/></div></div></div>}
+  async function submitAnalysis(){
+    if(!analysisFile){setMessage('Choose an image to analyze. The file is sent directly to the analyzer and bypasses the generation upload safety gate.');return;}
+    setLoading(true);setMessage('');setAnalysis(null);setJob(null);setOutput(null);setHistoryId(null);
+    try{
+      const form=new FormData();form.append('image',analysisFile);form.append('level',analysisLevel);
+      const response=await fetch('/api/analyze-image',{method:'POST',body:form});const data=await response.json() as {result?:Record<string,unknown>;jobId?:string;error?:string};
+      if(!response.ok||!data.result) throw new Error(data.error||'Image analysis failed.');
+      setAnalysis(data.result);setMessage(`Analysis saved to history${data.jobId?` · ${data.jobId}`:''}.`);if(data.jobId){setHistoryId(data.jobId);void loadJob(data.jobId);}
+    }catch(error){setMessage(error instanceof Error?error.message:'Image analysis failed.');}
+    finally{setLoading(false);}
+  }
+
+  async function submitVideo(){
+    if(prompt.trim().length<3){setMessage('Describe the product, scene, movement, camera, and constraints.');return;}
+    setLoading(true);setMessage('');setJob(null);setOutput(null);setHistoryId(null);setAnalysis(null);
+    try{
+      const response=await fetch('/api/video-ad',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({prompt:prompt.trim(),durationSeconds:duration,quality:videoQuality,aspectRatio})});
+      const data=await response.json() as {jobId?:string;error?:string;model?:string;provider?:string};
+      if(!response.ok||!data.jobId) throw new Error(data.error||'Video generation could not be started.');
+      setJob({id:data.jobId,status:'queued',operation:'generateVideoAd',prompt:prompt.trim(),size:aspectRatio,quality:videoQuality==='high_end'?'premium':'standard',provider:data.provider??null,model:data.model??null,error_code:null,error_message:null,created_at:new Date().toISOString(),completed_at:null,request:{durationSeconds:duration,videoQuality,aspectRatio}});
+      setMessage(`Video queued · ${data.provider??'provider'} · ${data.model??''}`); await loadJob(data.jobId,true);
+    }catch(error){setMessage(error instanceof Error?error.message:'Video generation failed.');}
+    finally{setLoading(false);}
+  }
+
+  async function applyEdit(event:FormEvent){
+    event.preventDefault(); if(!historyId||!editPrompt.trim()||editing) return; setEditing(true);setMessage('');
+    try{const response=await fetch(`/api/history/${historyId}/edit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:editPrompt.trim(),quality})});const data=await response.json() as {jobId?:string;error?:string};if(!response.ok||!data.jobId)throw new Error(data.error||'Unable to start edit.');setHistoryId(data.jobId);setJob(null);setOutput(null);setEditPrompt('');window.history.replaceState({},'',`/dashboard/media?history=${data.jobId}`);await loadJob(data.jobId);}catch(error){setMessage(error instanceof Error?error.message:'Edit failed.');}finally{setEditing(false);}
+  }
+
+  async function downloadCurrent(){
+    if(!historyId)return;setDownloading(true);try{const response=await fetch(`/api/history/${historyId}/download`,{cache:'no-store'});if(!response.ok){const data=await response.json().catch(()=>({})) as {error?:string};throw new Error(data.error||'Download failed.');}const blob=await response.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`solamentis-${historyId}${job?.operation==='generateVideoAd'?'.mp4':'.webp'}`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);}catch(error){setMessage(error instanceof Error?error.message:'Download failed.');}finally{setDownloading(false);}
+  }
+
+  async function deleteCurrent(){if(!historyId)return;if(!window.confirm('Delete this media history item and its master asset?'))return;const response=await fetch(`/api/history/${historyId}`,{method:'DELETE'});const data=await response.json() as {error?:string};if(!response.ok){setMessage(data.error||'Unable to delete.');return;}window.location.href='/dashboard/history';}
+
+  function chooseTab(next:Tab){setTab(next);setMessage('');setResultState();}
+  function setResultState(){setJob(null);setOutput(null);setAnalysis(null);setHistoryId(null);setLoading(false);}
+  function onAnalysisFile(event:ChangeEvent<HTMLInputElement>){setAnalysisFile(event.target.files?.[0]??null);setMessage('');}
+
+  const imageUrl=output?.url??null;
+  return <div className="space-y-7 sm:space-y-8">
+    <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-400">AI Media Studio</p><h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Create, analyze, and review everything in one place.</h1><p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">The former Create workspace now lives here with its platform sizes, quality controls, reference uploads, credits, editing, master outputs, and history.</p></div><div className="flex items-center gap-2"><a href="/dashboard/history" className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"><ArrowLeft className="size-4"/> History</a><button type="button" onClick={()=>setHelpOpen(true)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-950 px-3 text-xs font-semibold text-white"><CircleHelp className="size-4"/> Prompt help</button></div></header>
+
+    {loadingHistory&&<div className="flex items-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700"><Loader2 className="size-4 animate-spin"/> Restoring saved media state…</div>}
+    <div className="grid grid-cols-3 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">{([['image',ImagePlus,'Image generation'],['analysis',FileSearch,'Image analysis'],['video',Video,'Video generation']] as const).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>chooseTab(id)} className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-2 text-xs font-semibold transition sm:text-sm ${tab===id?'bg-slate-950 text-white':'text-slate-500 hover:bg-slate-50'}`}><Icon className="size-4"/>{label}</button>)}</div>
+
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,520px)]">
+      <Card><CardHeader><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-xl bg-slate-950 text-white">{tab==='image'?<Sparkles className="size-5"/>:tab==='analysis'?<Camera className="size-5"/>:<Video className="size-5"/>}</span><div><p className="text-sm font-semibold">{tab==='image'?'Image generation':tab==='analysis'?'Image authenticity analysis':'Silent video ad generation'}</p><p className="text-xs text-slate-400">All results use the existing account plans, credits, safety, storage, and history system.</p></div></div></CardHeader><CardBody>
+        {tab==='image'&&<form onSubmit={submitImage} className="space-y-5"><div className="grid gap-4 sm:grid-cols-2"><label className="block text-sm font-medium">Platform<select value={platform} onChange={e=>setPlatform(e.target.value as PlatformId)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3.5 py-3">{Object.keys(PLATFORM_SPECS).map(id=><option key={id} value={id}>{platformLabels[id as PlatformId]}</option>)}</select></label><label className="block text-sm font-medium">Quality<select value={quality} onChange={e=>setQuality(e.target.value as Quality)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3.5 py-3"><option value="preview">Preview · 1 credit</option><option value="standard">Standard · 2–3 credits</option><option value="premium">Premium · 4–5 credits</option></select></label></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-400">Canvas / master</p><p className="mt-1 text-sm font-semibold">{spec.width} × {spec.height}</p></div><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-400">Export limit</p><p className="mt-1 text-sm font-semibold">{(spec.maxBytes/1000000).toFixed(1)} MB</p></div><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-400">Reference</p><p className="mt-1 text-sm font-semibold">{reference?'Attached':'Optional'}</p></div></div><ImageUpload current={reference} onChange={setReference}/><label className="block text-sm font-medium">Creative brief<textarea required minLength={3} rows={11} value={prompt} onChange={e=>setPrompt(e.target.value)} className="mt-2 min-h-48 w-full resize-y rounded-2xl border border-slate-200 px-4 py-3.5 leading-6" placeholder="Describe subject, composition, lighting, style, hierarchy, brand feel, and constraints."/></label><ActionRow message={message} failed={job?.status==='failed'} loading={loading} active={active} label="Generate visual" disabled={prompt.trim().length<3} onClick={undefined}/><Button type="submit" disabled={loading||prompt.trim().length<3||active} loading={loading} className="w-full">{loading?'Starting generation…':active?'Generation in progress…':'Generate visual'}<ArrowRight className="size-4"/></Button></form>}
+
+        {tab==='analysis'&&<div className="space-y-5"><label className="block text-sm font-medium">Image file<input type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/bmp,image/tiff" onChange={onAnalysisFile} className="mt-2 block w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"/></label><label className="block text-sm font-medium">Analysis depth<select value={analysisLevel} onChange={e=>setAnalysisLevel(e.target.value as AnalysisLevel)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3 py-3"><option value="basic">Basic · 2 credits</option><option value="medium">Medium · 5 credits</option><option value="hard">Hard · 12 credits</option></select></label><div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500">Analysis is deliberately outside the generation upload safety filter. The analysis result itself is saved into media history.</div>{message&&<div role="status" className="rounded-xl bg-slate-100 p-3 text-sm text-slate-700">{message}</div>}<Button type="button" disabled={loading||!analysisFile} loading={loading} className="w-full" onClick={()=>void submitAnalysis()}>{loading?'Analyzing…':'Analyze and save result'}<FileSearch className="size-4"/></Button></div>}
+
+        {tab==='video'&&<div className="space-y-5"><div className="grid gap-4 sm:grid-cols-3"><label className="block text-sm font-medium">Duration<select value={duration} onChange={e=>setDuration(Number(e.target.value))} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3 py-3">{[3,4,5,6,8,10,12,15,20,30].map(v=><option key={v} value={v}>{v}s</option>)}</select></label><label className="block text-sm font-medium">Quality<select value={videoQuality} onChange={e=>setVideoQuality(e.target.value as VideoQuality)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3 py-3"><option value="standard">Standard · 9 credits · 720p</option><option value="high_end">High-End · 25 credits · 1080p</option></select></label><label className="block text-sm font-medium">Aspect ratio<select value={aspectRatio} onChange={e=>setAspectRatio(e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3 py-3">{['16:9','9:16','1:1','4:3','3:4'].map(v=><option key={v} value={v}>{v}</option>)}</select></label></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-400">Output</p><p className="mt-1 text-sm font-semibold">{videoQuality==='high_end'?'1080p':'720p'}</p></div><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-400">Audio</p><p className="mt-1 text-sm font-semibold">Off / silent</p></div><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-400">Master</p><p className="mt-1 text-sm font-semibold">One MP4 file</p></div></div><label className="block text-sm font-medium">Video brief<textarea required minLength={3} rows={11} value={prompt} onChange={e=>setPrompt(e.target.value)} className="mt-2 min-h-48 w-full resize-y rounded-2xl border border-slate-200 px-4 py-3.5 leading-6" placeholder="Describe product, scene, motion, camera movement, lighting, timing, and constraints. Keep audio off."/></label>{message&&<div role="status" className={`rounded-xl p-3 text-sm ${job?.status==='failed'?'bg-red-50 text-red-700':'bg-slate-100 text-slate-700'}`}>{message}</div>}<Button type="button" disabled={loading||prompt.trim().length<3||active} loading={loading} className="w-full" onClick={()=>void submitVideo()}>{loading?'Starting video…':active?'Video in progress…':`Generate ${duration}s video ad`}<Video className="size-4"/></Button></div>}
+      </CardBody></Card>
+
+      <Card><CardHeader><div className="flex items-center justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-400">Master result</p><p className="mt-1 text-sm font-semibold">{job?.provider?`${job.provider}${job.model?` · ${job.model}`:''}`:'Saved creative output'}</p></div>{job&&<span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${job.status==='succeeded'?'bg-emerald-50 text-emerald-700':job.status==='failed'||job.status==='cancelled'?'bg-red-50 text-red-700':'bg-amber-50 text-amber-700'}`}>{job.status}</span>}</div></CardHeader><CardBody className="p-0">
+        {imageUrl&&job?.operation!=='generateVideoAd'?<div className="overflow-hidden bg-slate-950"><img src={imageUrl} alt="Generated master" className="mx-auto max-h-[620px] w-full object-contain"/><div className="flex flex-wrap gap-2 border-t border-white/10 bg-white p-4"><Button type="button" variant="secondary" onClick={()=>window.open(imageUrl,'_blank')}><Maximize2 className="size-4"/>Preview</Button><Button type="button" disabled={!historyId||downloading} onClick={()=>void downloadCurrent()}>{downloading?<Loader2 className="size-4 animate-spin"/>:<Download className="size-4"/>Download master</Button>{historyId&&<Button type="button" variant="danger" onClick={()=>void deleteCurrent()}><Trash2 className="size-4"/>Delete</Button>}</div></div>:job?.operation==='generateVideoAd'&&imageUrl?<div className="bg-slate-950 p-3"><video src={imageUrl} controls playsInline className="w-full rounded-2xl"/><div className="flex flex-wrap gap-2 border-t border-slate-800 p-4"><Button type="button" disabled={!historyId||downloading} onClick={()=>void downloadCurrent()}>{downloading?<Loader2 className="size-4 animate-spin"/>:<Download className="size-4"/>Download master MP4</Button>{historyId&&<Button type="button" variant="danger" onClick={()=>void deleteCurrent()}><Trash2 className="size-4"/>Delete</Button>}</div></div>:analysis?<div className="space-y-3 p-4"><pre className="max-h-[560px] overflow-auto whitespace-pre-wrap rounded-2xl bg-slate-950 p-4 text-xs leading-5 text-white">{JSON.stringify(analysis,null,2)}</pre>{historyId&&<Button type="button" variant="danger" onClick={()=>void deleteCurrent()}><Trash2 className="size-4"/>Delete analysis</Button>}</div>:<div className="grid min-h-[420px] place-items-center p-6"><div className="text-center">{job?<>{job.status==='failed'||job.status==='cancelled'?<XCircle className="mx-auto size-9 text-red-300"/>:<Loader2 className={`mx-auto size-9 text-blue-500 ${active?'animate-spin':''}`}/>}<p className="mt-4 text-sm font-semibold text-slate-700">{job.status}</p><p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">{statusCopy[job.status]||'Processing.'}</p>{job.error_message&&<p className="mt-3 max-w-sm rounded-lg bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">{job.error_message}</p>}{active&&<p className="mt-4 inline-flex items-center gap-2 text-[11px] text-slate-400"><Clock3 className="size-3.5"/>Auto-checking…</p>}</>:<><ImagePlus className="mx-auto size-9 text-slate-300"/><p className="mt-4 text-sm font-semibold text-slate-600">Your master output appears here</p><p className="mt-1 max-w-xs text-xs leading-5 text-slate-400">Image, analysis, and video results are saved into the same history system.</p></>}</div></div>}
+      </CardBody></Card>
+    </div>
+
+    {historyId&&job?.operation==='generateImage'&&<Card><CardHeader><div className="flex items-center gap-3"><Pencil className="size-4"/><div><p className="text-sm font-semibold">Continue this image</p><p className="text-xs text-slate-400">Edits create another history item and keep the original master intact.</p></div></div></CardHeader><CardBody><form onSubmit={applyEdit} className="flex flex-col gap-3 sm:flex-row"><input value={editPrompt} onChange={e=>setEditPrompt(e.target.value)} placeholder="Example: keep everything the same but change the background to a clean studio gradient." className="min-h-11 flex-1 rounded-xl border border-slate-200 px-3.5 py-3 text-sm"/><Button type="submit" disabled={editing||!editPrompt.trim()} loading={editing}>Create edit</Button></form></CardBody></Card>}
+
+    {helpOpen&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" onMouseDown={()=>setHelpOpen(false)}><div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl" onMouseDown={e=>e.stopPropagation()}><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Prompt examples</h2><p className="mt-1 text-sm text-slate-500">Describe subject, composition, movement, lighting, and constraints instead of only naming the object.</p></div><button type="button" onClick={()=>setHelpOpen(false)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">Close</button></div><div className="mt-6 space-y-4"><Example title="Image" text="Luxury black sports car outside a glass villa at sunset, low 35mm automotive commercial camera, warm rim light, realistic reflections, centered hero composition, negative space for headline, no people, no logos."/><Example title="Video" text="8-second premium running-shoe advertisement. Shoe enters a dark luxury studio, rotates 180 degrees above a wet reflective floor, camera pushes in, macro detail, smooth commercial motion, soft key and rim light, no people, no text, no audio."/><Example title="Analysis" text="Analyze likely AI generation, digital manipulation, compositing, camera-original characteristics, resampling/compression clues, metadata/provenance signals when observable, confidence, evidence, and limitations. Never claim certainty."/></div></div></div>}
   </div>;
 }
 
-function Example({ title, value }: { title: string; value: string }) { return <div className="rounded-2xl border border-slate-200 p-4"><p className="text-xs font-semibold uppercase tracking-[.14em] text-slate-400">{title}</p><p className="mt-2 text-sm leading-6 text-slate-700">{value}</p></div>; }
+function ActionRow(){return null;}
+function Example({title,text}:{title:string;text:string}){return <div className="rounded-2xl border border-slate-200 p-4"><p className="text-xs font-semibold uppercase tracking-[.14em] text-slate-400">{title}</p><p className="mt-2 text-sm leading-6 text-slate-700">{text}</p></div>;}
