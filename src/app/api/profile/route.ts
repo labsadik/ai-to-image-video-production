@@ -33,14 +33,10 @@ export async function PATCH(request: Request) {
     const { data: { user } } = await client.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const body = await request.json() as Record<string, unknown>;
-    const activityOnly = body.activity === true;
     const admin = getSupabaseAdmin();
-    if (activityOnly) {
-      const now = new Date().toISOString();
-      const { data, error } = await admin.from('profiles').update({ last_login_at: now, last_seen_at: now, login_count: 1 }).eq('id', user.id).select('*').single();
+    if (body.activity === true) {
+      const { data, error } = await admin.rpc('record_profile_login', { p_user_id: user.id });
       if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-      const currentCount = Number(data.login_count ?? 1);
-      if (currentCount === 1) await admin.from('profiles').update({ login_count: Number((data as { login_count?: number }).login_count ?? 1) }).eq('id', user.id);
       return NextResponse.json({ profile: data });
     }
     const fullName = typeof body.full_name === 'string' ? body.full_name.trim().slice(0, 120) : null;
