@@ -37,6 +37,7 @@ export async function PATCH(request: Request) {
     if (body.activity === true) {
       const { data, error } = await admin.rpc('record_profile_login', { p_user_id: user.id });
       if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      await admin.from('audit_logs').insert({ user_id: user.id, actor_type: 'user', action: 'auth.login', resource_type: 'session', metadata: { country_code: data?.country_code ?? null } });
       return NextResponse.json({ profile: data });
     }
     const fullName = typeof body.full_name === 'string' ? body.full_name.trim().slice(0, 120) : null;
