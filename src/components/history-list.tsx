@@ -68,8 +68,8 @@ export function HistoryList({ initialItems }: { initialItems: HistoryItem[] }) {
       const ready = item.status === 'succeeded';
       return <article key={item.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
         <Link href={`/dashboard/create?history=${item.id}`} className="block">
-          <div className="aspect-video overflow-hidden bg-slate-100">
-            {item.previewUrl ? <img src={item.previewUrl} alt="Generated visual" className="block h-full w-full object-cover" /> : <div className="grid h-full place-items-center border-b border-dashed border-slate-300"><Icon className={`size-8 ${item.status === 'processing' ? 'animate-spin' : ''} text-slate-400`} /></div>}
+          <div className="flex aspect-video items-center justify-center overflow-hidden bg-slate-950">
+            {item.previewUrl ? <img src={item.previewUrl} alt="Generated visual" className="block max-h-full max-w-full object-contain" /> : <div className="grid h-full w-full place-items-center border-b border-dashed border-slate-700"><Icon className={`size-8 ${item.status === 'processing' ? 'animate-spin' : ''} text-slate-500`} /></div>}
           </div>
           <div className="p-5">
             <div className="flex items-center justify-between gap-3">
