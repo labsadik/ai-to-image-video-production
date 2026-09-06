@@ -1,5 +1,3 @@
-import 'server-only';
-
 import { SOLAMENTIS_SAFETY_POLICY } from '@/config/safety-policy';
 import { getSupabaseAdmin } from './supabase-admin';
 import type { SafetyDecision } from '@/core/safety';
