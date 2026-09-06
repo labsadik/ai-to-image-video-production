@@ -19,6 +19,7 @@ export interface GenerationRequest {
   height: number;
   quality: GenerationQuality;
   referenceImages?: ReferenceImage[];
+  referenceImageStoragePaths?: string[];
 }
 
 export interface ProviderResult {
