@@ -5,15 +5,15 @@ export type VideoAdQuality = 'standard' | 'high_end';
 export const MEDIA_FEATURES = {
   free: {
     imageAnalysis: { basic: 2, medium: 0, hard: 0 },
-    videoAd: { standard: 9, high_end: 0 },
+    videoAd: { standard: 0, high_end: 0 },
   },
   pro: {
-    imageAnalysis: { basic: 2, medium: 5, hard: 12 },
-    videoAd: { standard: 9, high_end: 25 },
+    imageAnalysis: { basic: 2, medium: 5, hard: 10 },
+    videoAd: { standard: 10, high_end: 0 },
   },
   business: {
-    imageAnalysis: { basic: 2, medium: 5, hard: 12 },
-    videoAd: { standard: 9, high_end: 25 },
+    imageAnalysis: { basic: 2, medium: 5, hard: 10 },
+    videoAd: { standard: 10, high_end: 0 },
   },
 } as const satisfies Record<PlanId, {
   imageAnalysis: Record<ImageAnalysisLevel, number>;
@@ -21,11 +21,11 @@ export const MEDIA_FEATURES = {
 }>;
 
 export const VIDEO_AD_LIMITS = {
-  minDurationSeconds: 3,
+  minDurationSeconds: 5,
   maxDurationSeconds: 30,
   audio: false,
-  standard: { label: 'Standard Ad', creditRange: '8–9', maxQuality: '720p' },
-  high_end: { label: 'High-End Ad', creditRange: '20–25', maxQuality: '1080p' },
+  standard: { label: 'Standard Video Clip', creditRange: '10', maxQuality: '720p' },
+  high_end: { label: 'High-End Video Clip', creditRange: '0', maxQuality: '1080p' },
 } as const;
 
 export function imageAnalysisCredits(plan: PlanId, level: ImageAnalysisLevel) {
