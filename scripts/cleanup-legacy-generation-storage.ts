@@ -11,7 +11,6 @@ const supabase = createClient(url, secret, { auth: { autoRefreshToken: false, pe
 const BATCH_SIZE = 500;
 
 async function main() {
-  let offset = 0;
   let cleanedAssets = 0;
   let removedObjects = 0;
 
@@ -21,7 +20,7 @@ async function main() {
       .select('id,metadata')
       .not('metadata->legacy_storage_paths', 'is', null)
       .order('created_at', { ascending: true })
-      .range(offset, offset + BATCH_SIZE - 1);
+      .range(0, BATCH_SIZE - 1);
 
     if (error) throw new Error(`Legacy asset lookup failed: ${error.message}`);
     if (!assets?.length) break;
@@ -31,10 +30,6 @@ async function main() {
       const legacy = Array.isArray(metadata.legacy_storage_paths)
         ? metadata.legacy_storage_paths.filter((value): value is string => typeof value === 'string' && value.length > 0)
         : [];
-      if (!legacy.length) {
-        await supabase.from('assets').update({ metadata: { ...metadata, legacy_storage_paths: [] } }).eq('id', asset.id);
-        continue;
-      }
 
       for (let index = 0; index < legacy.length; index += 1000) {
         const paths = legacy.slice(index, index + 1000);
@@ -50,9 +45,6 @@ async function main() {
       if (updateError) throw new Error(`Legacy metadata cleanup failed: ${updateError.message}`);
       cleanedAssets += 1;
     }
-
-    offset += assets.length;
-    if (assets.length < BATCH_SIZE) break;
   }
 
   console.log(`Legacy generation storage cleanup complete: ${cleanedAssets} assets, ${removedObjects} objects removed.`);
