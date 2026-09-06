@@ -25,8 +25,11 @@ export class HuggingFaceImageProviderAdapter implements ProviderAdapter {
           width: request.width,
           height: request.height,
         },
+      }, {
         provider: this.config.provider === 'auto' ? undefined : this.config.provider,
-      }, { signal: controller.signal, outputType: 'blob' });
+        signal: controller.signal,
+        outputType: 'blob',
+      });
 
       const buffer = Buffer.from(await image.arrayBuffer());
       const mimeType = image.type || 'image/png';
@@ -50,7 +53,11 @@ export class HuggingFaceImageProviderAdapter implements ProviderAdapter {
     if (!model) return { ok: true, latencyMs: Date.now() - started, message: 'Model not supplied for Hugging Face health check' };
     try {
       const client = new InferenceClient(apiKey);
-      await client.textToImage({ model, inputs: 'simple abstract test image' }, { provider: this.config.provider === 'auto' ? undefined : this.config.provider, signal: AbortSignal.timeout(Math.min(this.config.timeoutMs, 15000)), outputType: 'blob' });
+      await client.textToImage({ model, inputs: 'simple abstract test image' }, {
+        provider: this.config.provider === 'auto' ? undefined : this.config.provider,
+        signal: AbortSignal.timeout(Math.min(this.config.timeoutMs, 15000)),
+        outputType: 'blob',
+      });
       return { ok: true, latencyMs: Date.now() - started };
     } catch (error) {
       return { ok: false, latencyMs: Date.now() - started, message: error instanceof Error ? error.message : 'Hugging Face health check failed' };
