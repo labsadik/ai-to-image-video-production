@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@google/genai": "2.21.0",
+    "@huggingface/inference": "4.13.28",
     "@supabase/ssr": "0.12.6",
     "@supabase/supabase-js": "2.115.0",
     "@tailwindcss/postcss": "4.1.13",
