@@ -19,3 +19,14 @@ button { cursor: pointer; }
 
 .soft-shadow { box-shadow: 0 18px 55px rgba(15, 23, 42, .08); }
 .glass { background: rgba(255,255,255,.82); backdrop-filter: blur(18px); }
+
+@keyframes solamentis-navigation-progress {
+  0% { transform: translateX(-120%); }
+  55% { transform: translateX(190%); }
+  100% { transform: translateX(420%); }
+}
+
+.solamentis-navigation-progress {
+  animation: solamentis-navigation-progress 1.15s cubic-bezier(.2,.65,.3,1) infinite;
+  box-shadow: 0 0 12px rgba(59, 130, 246, .45);
+}
