@@ -18,9 +18,9 @@ export type DisplayPlan = {
 };
 
 export const DISPLAY_PLANS: readonly DisplayPlan[] = [
-  { id: 'free', name: 'Free', description: 'Start creating with a small monthly allowance.', monthlyCredits: 5, maxUploadsPerProject: 1, watermark: true, monthlyFallbackMinor: 0, features: ['5 credits / month', 'Basic image generation', 'Basic image analysis · 2 credits', 'Watermark on generated media', 'Private project storage + history'], icon: Gauge, premium: false },
+  { id: 'free', name: 'Free', description: 'Start creating with a small monthly allowance.', monthlyCredits: 5, maxUploadsPerProject: 2, watermark: true, monthlyFallbackMinor: 0, features: ['5 credits / month', 'Basic image generation', 'Basic image analysis · 2 credits', 'Watermark on generated media', 'Private project storage + history', 'Up to 2 uploads / project'], icon: Gauge, premium: false },
   { id: 'pro', name: 'Starter', description: 'For creators who need more generation and analysis capacity.', monthlyCredits: 50, maxUploadsPerProject: 5, watermark: false, monthlyFallbackMinor: 1000, features: ['50 credits / month', 'Basic / Medium / Ultra image generation', 'Basic / Medium / High image analysis', 'Standard 5-second video · 10 credits', 'No visible watermark', 'Up to 5 uploads / project'], icon: Sparkles, premium: true },
-  { id: 'business', name: 'Growth', description: 'For teams and production workloads.', monthlyCredits: 100, maxUploadsPerProject: 10, watermark: false, monthlyFallbackMinor: 3000, features: ['100 credits / month', 'Basic / Medium / Ultra image generation', 'Basic / Medium / High image analysis', 'Standard 5-second video · 10 credits', 'No visible watermark', 'Up to 10 uploads / project'], icon: Crown, premium: false },
+  { id: 'business', name: 'Growth', description: 'For teams and production workloads.', monthlyCredits: 100, maxUploadsPerProject: 20, watermark: false, monthlyFallbackMinor: 3000, features: ['100 credits / month', 'Basic / Medium / Ultra image generation', 'Basic / Medium / High image analysis', 'Standard 5-second video · 10 credits', 'No visible watermark', 'Up to 20 uploads / project'], icon: Crown, premium: false },
 ];
 
 export const PLAN_COMPARISON_FEATURES = [
