@@ -12,6 +12,10 @@ async function tick() {
   }
 }
 
-console.log(`[solamentis-worker] started; polling every ${intervalMs}ms (batch=${batchSize})`);
-await tick();
-setInterval(() => void tick(), intervalMs);
+async function main() {
+  console.log(`[solamentis-worker] started; polling every ${intervalMs}ms (batch=${batchSize})`);
+  await tick();
+  setInterval(() => void tick(), intervalMs);
+}
+
+void main();
