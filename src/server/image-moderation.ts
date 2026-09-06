@@ -75,6 +75,10 @@ function renderConfigTemplate(value: unknown, values: Record<string, string>): u
   return value;
 }
 
+function encodeHuggingFaceModelPath(model: string) {
+  return model.split('/').map(segment => encodeURIComponent(segment)).join('/');
+}
+
 async function moderateWithHuggingFaceImageClassification(input: { apiKey: string; model: string; mimeType: string; provider: string; timeoutMs: number; base64: string; baseUrl: string; requestConfig: HuggingFaceModerationConfig }): Promise<ModerationResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
@@ -83,20 +87,11 @@ async function moderateWithHuggingFaceImageClassification(input: { apiKey: strin
     const provider = resolveHuggingFaceProvider(input.provider || input.requestConfig.provider || 'auto');
     const baseUrl = input.baseUrl.replace(/\/$/, '').replace('https://huggingface.co', 'https://router.huggingface.co');
     const configuredPath = input.requestConfig.path ?? '/hf-inference/models/{{model}}';
-    const endpoint = `${baseUrl}/${configuredPath.replace(/^\//, '')}`.replace('{{provider}}', provider).replace('{{model}}', encodeURIComponent(input.model));
+    const endpoint = `${baseUrl}/${configuredPath.replace(/^\//, '')}`.replace('{{provider}}', provider).replace('{{model}}', encodeHuggingFaceModelPath(input.model));
     const method = (input.requestConfig.method ?? 'POST').toUpperCase();
     const bodyTemplate = input.requestConfig.body ?? { inputs: '{{base64}}' };
     const body = renderConfigTemplate(bodyTemplate, { model: input.model, mimeType: normalizeImageMimeType(input.mimeType), base64: input.base64, provider }) as Record<string, unknown>;
-    const response = await fetch(endpoint, {
-      method,
-      headers: {
-        authorization: `Bearer ${input.apiKey}`,
-        'content-type': 'application/json',
-        accept: 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+    const response = await fetch(endpoint, { method, headers: { authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body), signal: controller.signal });
     const text = await response.text();
     let payload: unknown;
     try { payload = JSON.parse(text); } catch { payload = undefined; }
