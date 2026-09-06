@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, Check, ChevronDown, FileImage, Film, Gauge, Layers3, LockKeyhole, ScanSearch, Sparkles, WandSparkles } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, FileImage, Film, LockKeyhole, ScanSearch, Sparkles, WandSparkles } from 'lucide-react';
 import { HeroOrbit, Reveal } from './marketing-motion';
 
 const examples = [
@@ -60,8 +60,4 @@ export function MarketingCTA() {
 
 export function MarketingHero3D() {
   return <div className="relative rounded-[32px] border border-slate-200 bg-slate-950 p-2 shadow-2xl"><div className="relative min-h-[420px] overflow-hidden rounded-[26px] bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,.14),transparent_35%),radial-gradient(circle_at_80%_65%,rgba(148,163,184,.12),transparent_30%)]"><div className="absolute inset-0 opacity-40 [background-image:linear-gradient(rgba(255,255,255,.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.05)_1px,transparent_1px)] [background-size:40px_40px]" /><HeroOrbit /><div className="absolute bottom-5 left-5 right-5 rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur-xl"><div className="flex items-center justify-between gap-4"><div><p className="text-[11px] font-semibold uppercase tracking-[.16em] text-slate-500">Solamentis Studio</p><p className="mt-1 text-sm font-semibold text-white">Generate · analyze · refine · deliver</p></div><WandSparkles className="size-5 text-white" /></div></div></div></div>;
-}
-
-export function MarketingIconStrip() {
-  return <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-2xl border border-slate-200 bg-white p-4"><Sparkles className="size-4" /><p className="mt-3 text-xs font-semibold">AI creation</p></div><div className="rounded-2xl border border-slate-200 bg-white p-4"><ScanSearch className="size-4" /><p className="mt-3 text-xs font-semibold">Image analysis</p></div><div className="rounded-2xl border border-slate-200 bg-white p-4"><Film className="size-4" /><p className="mt-3 text-xs font-semibold">Video ads</p></div><div className="rounded-2xl border border-slate-200 bg-white p-4"><LockKeyhole className="size-4" /><p className="mt-3 text-xs font-semibold">Private delivery</p></div></div>;
 }
