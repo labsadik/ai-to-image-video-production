@@ -6,7 +6,7 @@
 - Node 24 CI/runtime target with lint/typecheck/build verification
 - Phase 1 commercial plans: Free 5 monthly credits, Pro 50, Business 100
 - Phase 1 generation credit costs: Basic 1, Medium 5, Ultra 10
-- Phase 1 project upload limits: Free 1, Pro 5, Business 10
+- Phase 1 upload quotas: Free 2/month, Pro 5/month, Business 20/month, with matching hard project caps
 - Configuration-driven plans and platform specs
 - Live Supabase provider/model routing tables
 - Google Gemini image adapter using current image-generation API
@@ -29,7 +29,7 @@
 - Supabase secret API-key compatibility with legacy service-role fallback during migration
 - Signed private upload issuance
 - Upload issuance rate limiting and strict client metadata validation
-- Server-enforced plan upload limits from `GENERATION_PLANS`
+- Server-enforced monthly and per-project plan upload limits
 - Uploaded-image structural validation based on actual stored bytes
 - Uploaded-image SHA-256 checksum persistence
 - Vision-based moderation for uploaded/generated images with versioned policy selection
@@ -50,7 +50,14 @@
 - Supabase Edge Function source tracked under `supabase/functions/`
 - Country-aware pricing data model for five initial markets: IN, US, BD, GB, AE
 - Country/currency/locale pricing endpoint using country headers or explicit country selection
-- Billing webhook receiver with Stripe signature validation and replay-event persistence
+- Secure Stripe checkout API for paid plans and the Phase 1 50-credit/$5 top-up
+- Checkout rate limiting and Stripe request idempotency keys
+- Credit wallet UI on dashboard, sidebar, header, billing page, and live usage modal
+- Purchased-credit balance stored separately from monthly credits and never expired
+- Atomic purchased-credit grant RPC with ledger/grant idempotency
+- Atomic paid-plan activation/renewal RPC with monthly credit period tracking
+- Billing webhook with Stripe signature validation, replay-safe persistence, subscription activation/renewal, add-on credit grants, cancellation handling, and payment-failure state
+- Monthly/per-project upload quota UI and server enforcement
 - Minimal login/signup/create UI
 - Server-side admin provider and AI-route configuration endpoints
 - Audit-log writes for provider configuration changes
@@ -61,20 +68,18 @@
 ## Verified live Supabase Phase 1 state
 
 - Project `yyeidanzflitrstvooxw` is the active Solamentis Supabase project
-- `plans` table matches Phase 1: Free 5 credits / 1 upload, Pro 50 / 5, Business 100 / 10
-- `ai_feature_routes` contains 30 category/quality routes with the expected Phase 1 plan gates
-- `ai_models` contains 13 configured provider/model records
-- `ai_providers` contains Google, Fal, Ideogram, OpenRouter-related support plus safety providers
-- `solamentis-assets` Storage bucket exists and `storage.objects` has RLS policies
-- Credit reserve/finalize/refund RPCs exist and return boolean results
-- `credit_grants` and `credit_reservations` now have explicit deny-by-default RLS policies and no direct anon/authenticated table privileges
+- `plans` table matches Phase 1: Free 5 credits / 2 uploads per month and per project, Pro 50 / 5, Business 100 / 20
+- `credit_products` contains active `addon_50_usd`: 50 credits for $5 USD, `expires=false`
+- `grant_addon_credits(uuid,bigint,text,text,jsonb)` and `activate_paid_plan(uuid,text,timestamptz,timestamptz,text,jsonb)` exist as service-role-only RPCs
+- `credit_grants` and `credit_reservations` have explicit deny-by-default RLS policies and no direct anon/authenticated table privileges
 - Security advisor no longer reports the two credit-table RLS policy findings
 - Remaining security advisor warning: leaked password protection is disabled in Supabase Auth and must be enabled in the Supabase Auth dashboard
+- Live `billing-webhook` is ACTIVE at version 5 with JWT verification disabled because it performs Stripe signature verification itself
 
 ## Not yet launch-complete
 
-- Production Stripe Checkout/session creation and customer billing portal
-- Production subscription price IDs and billing secrets
+- Configure and verify production Stripe secret/webhook secrets and complete a real $5 top-up + subscription end-to-end test
+- Production subscription price IDs are optional with the current dynamic-price fallback, but should be created and pinned before scale
 - Automated country-specific tax/VAT/GST handling and tax evidence policy
 - Edge-to-production generation worker bridge secrets and deployed Vercel app URL
 - Provider capability discovery beyond basic health checks
@@ -93,7 +98,6 @@
 - Cost telemetry, provider spend budgets, and per-feature gross-margin controls
 - Backup/PITR restore drill, load/stress testing, and disaster-recovery verification
 - Reproducible dependency lockfile and npm-ci workflow
-- Repository/database migration history drift: the live database contains later Phase 1 migrations that are not all represented in GitHub history; new forward migrations are now tracked, but a complete historical reconciliation is still required
 - Image-analysis runtime currently uses the OpenRouter-specific implementation while the database also contains Google image-analysis routes; provider routing should be unified before claiming fully configuration-driven analysis
 - Image-edit runtime still has a legacy `ai_plan_routes` dependency; those legacy routes are disabled in the live database, so edit operations require further Phase 1 route unification
 - Migration from legacy Supabase service-role/anon key names to publishable/secret keys before the end-of-2026 deprecation window
