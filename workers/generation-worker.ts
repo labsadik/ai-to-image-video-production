@@ -4,6 +4,7 @@ import { getProviderSecret } from '@/server/provider-secrets';
 import { resolveLiveEditProviderModel, resolveLiveProviderModel, resolveProviderConfig } from '@/server/provider-config';
 import { moderateImage } from '@/server/image-moderation';
 import { optimizeImage } from '@/lib/image/optimizer';
+import { createMediaPreview } from '@/lib/media/preview';
 import { applyWatermark } from '@/lib/image/watermark';
 import { buildProvenance, embedProvenance, type ProvenanceRecord } from '@/lib/image/provenance';
 import type { ProviderResult, ReferenceImage } from '@/core/ai';
@@ -148,16 +149,20 @@ export async function processGenerationJob(jobId: string) {
       image = { ...image, buffer, byteSize: buffer.byteLength };
     }
 
+    const preview = await createMediaPreview(image.buffer);
     const base = `${job.user_id}/jobs/${job.id}`;
-    const path = `${base}/master.webp`;
-    const { error: uploadError } = await admin.storage.from('solamentis-assets').upload(path, image.buffer, { contentType: image.mimeType, upsert: true, cacheControl: '31536000, immutable' });
-    if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
+    const masterPath = `${base}/master.webp`;
+    const previewPath = `${base}/preview.webp`;
+    const { error: masterUploadError } = await admin.storage.from('solamentis-assets').upload(masterPath, image.buffer, { contentType: image.mimeType, upsert: true, cacheControl: '31536000, immutable' });
+    if (masterUploadError) throw new Error(`Storage upload failed: ${masterUploadError.message}`);
+    const { error: previewUploadError } = await admin.storage.from('solamentis-assets').upload(previewPath, preview.buffer, { contentType: preview.mimeType, upsert: true, cacheControl: '31536000, immutable' });
+    if (previewUploadError) throw new Error(`Preview storage upload failed: ${previewUploadError.message}`);
 
-    const { data: asset, error: assetError } = await admin.from('assets').insert({
+    const { data: masterAsset, error: masterAssetError } = await admin.from('assets').insert({
       user_id: job.user_id,
       project_id: job.project_id ?? null,
       kind: 'generated',
-      storage_path: path,
+      storage_path: masterPath,
       mime_type: image.mimeType,
       byte_size: image.byteSize,
       width: image.width,
@@ -177,17 +182,42 @@ export async function processGenerationJob(jobId: string) {
         watermark_text: watermarkText,
         provenance,
         storage_variant: 'master',
+        preview_storage_path: previewPath,
+        preview_byte_size: preview.byteSize,
       },
     }).select('id').single();
-    if (assetError || !asset) throw new Error(assetError?.message ?? 'Failed to persist generated asset');
+    if (masterAssetError || !masterAsset) throw new Error(masterAssetError?.message ?? 'Failed to persist generated asset');
 
-    const { error: outputsError } = await admin.from('generation_outputs').upsert({ job_id: job.id, asset_id: asset.id, variant: 'master', storage_path: path, mime_type: image.mimeType, width: image.width, height: image.height, byte_size: image.byteSize }, { onConflict: 'job_id,variant' });
+    const { data: previewAsset, error: previewAssetError } = await admin.from('assets').insert({
+      user_id: job.user_id,
+      project_id: job.project_id ?? null,
+      kind: 'preview',
+      storage_path: previewPath,
+      mime_type: preview.mimeType,
+      byte_size: preview.byteSize,
+      width: preview.width,
+      height: preview.height,
+      status: 'ready',
+      metadata: {
+        job_id: job.id,
+        role: 'generated_preview',
+        storage_variant: 'preview',
+        source_storage_path: masterPath,
+        source_byte_size: image.byteSize,
+      },
+    }).select('id').single();
+    if (previewAssetError || !previewAsset) throw new Error(previewAssetError?.message ?? 'Failed to persist generated preview asset');
+
+    const { error: outputsError } = await admin.from('generation_outputs').upsert([
+      { job_id: job.id, asset_id: masterAsset.id, variant: 'master', storage_path: masterPath, mime_type: image.mimeType, width: image.width, height: image.height, byte_size: image.byteSize },
+      { job_id: job.id, asset_id: previewAsset.id, variant: 'preview', storage_path: previewPath, mime_type: preview.mimeType, width: preview.width, height: preview.height, byte_size: preview.byteSize },
+    ], { onConflict: 'job_id,variant' });
     if (outputsError) throw new Error(`Failed to persist output: ${outputsError.message}`);
 
     const { error: finalizeError } = await admin.rpc('finalize_generation_credits', { p_user_id: job.user_id, p_amount: job.reserved_credits, p_idempotency_key: job.idempotency_key });
     if (finalizeError) throw new Error(`Credit finalization failed: ${finalizeError.message}`);
     creditsFinalized = true;
-    const { data: completed, error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', output_path: path, external_job_id: result.externalId, completed_at: new Date().toISOString(), request: { ...(request ?? {}), actualProvider, actualModel, moderationDecision: moderation.decision } }).eq('id', job.id).select('*').single();
+    const { data: completed, error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', output_path: masterPath, external_job_id: result.externalId, completed_at: new Date().toISOString(), request: { ...(request ?? {}), actualProvider, actualModel, moderationDecision: moderation.decision, masterByteSize: image.byteSize, previewByteSize: preview.byteSize, masterStoragePath: masterPath, previewStoragePath: previewPath } }).eq('id', job.id).select('*').single();
     if (completeError) throw new Error(`Job completion failed: ${completeError.message}`);
     return completed ?? job;
   } catch (error) {
