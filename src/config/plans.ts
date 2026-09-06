@@ -5,7 +5,7 @@ export type PublicGenerationQuality = 'basic' | 'medium' | 'ultra';
 export const GENERATION_PLANS = {
   free: {
     monthlyCredits: 5,
-    maxUploadsPerProject: 1,
+    maxUploadsPerProject: 2,
     watermark: true,
     credits: { preview: 1, standard: 5, premium: 10 },
     models: {
@@ -27,7 +27,7 @@ export const GENERATION_PLANS = {
   },
   business: {
     monthlyCredits: 100,
-    maxUploadsPerProject: 10,
+    maxUploadsPerProject: 20,
     watermark: false,
     credits: { preview: 1, standard: 5, premium: 10 },
     models: {
