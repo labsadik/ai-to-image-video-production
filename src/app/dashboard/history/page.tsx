@@ -1,6 +1,47 @@
-import { Clock3, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 import { getSupabaseServerClient } from '@/server/supabase';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
+import { HistoryList } from '@/components/history-list';
 
-const statusIcon={succeeded:CheckCircle2,failed:AlertTriangle,queued:Clock3,processing:Loader2,cancelled:AlertTriangle} as const;
-export default async function HistoryPage(){const client=await getSupabaseServerClient();const {data:{user}}=await client.auth.getUser();if(!user)return null;const {data:jobs}=await getSupabaseAdmin().from('generation_jobs').select('id,status,operation,prompt,size,quality,provider,model,created_at,completed_at,error_message').eq('user_id',user.id).order('created_at',{ascending:false}).limit(100);return <div className="space-y-8"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-400">History</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">Generation activity</h1><p className="mt-2 text-sm text-slate-500">Every request has an auditable state from queue to final delivery.</p></div><div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"><div className="hidden grid-cols-[1fr_140px_150px_160px] gap-4 border-b border-slate-100 px-6 py-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid"><span>Creative brief</span><span>Status</span><span>Quality</span><span>Date</span></div><div className="divide-y divide-slate-100">{jobs?.map(job=>{const Icon=statusIcon[job.status as keyof typeof statusIcon]||Clock3;return <div key={job.id} className="grid gap-3 px-6 py-5 md:grid-cols-[1fr_140px_150px_160px] md:items-center"><div className="min-w-0"><p className="truncate text-sm font-medium">{job.prompt}</p><p className="mt-1 truncate text-xs text-slate-400">{job.operation} · {job.size}</p>{job.error_message&&<p className="mt-2 text-xs text-red-600">{job.error_message}</p>}</div><span className={`inline-flex w-fit items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-semibold ${job.status==='succeeded'?'bg-emerald-50 text-emerald-700':job.status==='failed'?'bg-red-50 text-red-700':'bg-amber-50 text-amber-700'}`}><Icon className={`size-3.5 ${job.status==='processing'?'animate-spin':''}`}/>{job.status}</span><span className="text-xs font-medium capitalize text-slate-600">{job.quality}</span><span className="text-xs text-slate-400">{new Date(job.created_at).toLocaleString()}</span></div>})}{!jobs?.length&&<div className="p-12 text-center text-sm text-slate-500">Your generation history will appear here.</div>}</div></div></div>}
+export default async function HistoryPage() {
+  const client = await getSupabaseServerClient();
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) return null;
+
+  const admin = getSupabaseAdmin();
+  const { data: jobs } = await admin.from('generation_jobs').select('id,status,operation,prompt,size,quality,created_at,completed_at').eq('user_id', user.id).order('created_at', { ascending: false }).limit(100);
+  const jobIds = (jobs ?? []).map(job => job.id);
+  const { data: outputs } = jobIds.length
+    ? await admin.from('generation_outputs').select('job_id,variant,storage_path').in('job_id', jobIds).in('variant', ['editor', 'preview'])
+    : { data: [] };
+
+  const preferredPaths = new Map<string, string>();
+  for (const output of outputs ?? []) {
+    if (output.variant === 'editor' || !preferredPaths.has(output.job_id)) preferredPaths.set(output.job_id, output.storage_path);
+  }
+  const signed = await Promise.all([...preferredPaths.entries()].map(async ([jobId, path]) => {
+    const { data } = await admin.storage.from('solamentis-assets').createSignedUrl(path, 3600);
+    return [jobId, data?.signedUrl ?? null] as const;
+  }));
+  const signedMap = new Map(signed);
+
+  const items = (jobs ?? []).map(job => ({
+    id: job.id,
+    prompt: job.prompt,
+    operation: job.operation,
+    size: job.size,
+    quality: job.quality,
+    status: job.status,
+    created_at: job.created_at,
+    completed_at: job.completed_at,
+    previewUrl: signedMap.get(job.id) ?? null,
+  }));
+
+  return <div className="space-y-8">
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-400">History</p>
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight">Your generations</h1>
+      <p className="mt-2 text-sm text-slate-500">Open any completed generation in Studio to inspect its original prompt, image, settings, and edit it without losing the source history.</p>
+    </div>
+    <HistoryList initialItems={items} />
+  </div>;
+}
