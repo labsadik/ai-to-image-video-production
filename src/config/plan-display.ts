@@ -31,8 +31,9 @@ export const PLAN_COMPARISON_FEATURES = [
   { label:'Signed provenance', key:'provenance', format:(plan:DisplayPlan)=>plan.id==='free'?'Not included':'Included' },
   { label:'Safety checks', key:'safety', format:()=> 'Included' },
   { label:'Private storage', key:'storage', format:()=> 'Included' },
+  { label:'Upcoming features access', key:'upcomingFeatures', format:(plan:DisplayPlan)=>plan.id==='business'?'6-month + 1-year only':'Not included' },
 ];
 
 export function periodLabel(period: BillingPeriod) { return period===12?'1 year':`${period} month${period===1?'':'s'}`; }
-export function qualifiesForUpcomingFeatures(planId: PlanId, period: BillingPeriod) { return DISPLAY_PLANS.some((plan)=>plan.id===planId && plan.premium) && period>=6; }
+export function qualifiesForUpcomingFeatures(planId: PlanId, period: BillingPeriod) { return planId==='business' && (period===6 || period===12); }
 export const planHighlights=[{icon:Upload,label:'Controlled uploads'},{icon:ShieldCheck,label:'Safety + private storage'}];
