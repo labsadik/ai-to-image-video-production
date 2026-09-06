@@ -2,22 +2,26 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import ffmpegPath from 'ffmpeg-static';
+
+const execFileAsync = promisify(execFile);
 
 function escapeDrawtext(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'").replace(/%/g, '\\%').replace(/,/g, '\\,');
 }
 
 async function runFfmpeg(args: string[]) {
-  if (!ffmpegPath) throw new Error('FFmpeg binary is unavailable');
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderr = '';
-    child.stderr.on('data', chunk => { stderr += String(chunk); });
-    child.on('error', reject);
-    child.on('close', code => code === 0 ? resolve() : reject(new Error(`FFmpeg exited with code ${code}: ${stderr.slice(-1800)}`)));
-  });
+  const binary = ffmpegPath;
+  if (!binary) throw new Error('FFmpeg binary is unavailable');
+  try {
+    await execFileAsync(binary, args, { maxBuffer: 4 * 1024 * 1024 });
+  } catch (error) {
+    const stderr = error instanceof Error && 'stderr' in error ? String((error as { stderr?: unknown }).stderr ?? '') : '';
+    const message = error instanceof Error ? error.message : 'FFmpeg execution failed';
+    throw new Error(`FFmpeg failed: ${message}${stderr ? `: ${stderr.slice(-1800)}` : ''}`);
+  }
 }
 
 export async function processVideoOutput(input: Buffer, options: {
