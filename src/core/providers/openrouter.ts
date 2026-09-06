@@ -12,6 +12,7 @@ type AuthenticityResult = {
   ai_generated_probability: number;
   edited_probability: number;
   real_probability: number;
+  inconclusive_probability: number;
   confidence: number;
   evidence: string[];
   possible_editing_tools: string[];
@@ -64,7 +65,7 @@ function textFromContent(content: unknown) {
 function parseJsonCandidate(text: string): Record<string, unknown> | null {
   const candidates = [
     text.trim(),
-    text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim() ?? '',
+    text.match(/```(?:json)?\\s*([\\s\\S]*?)```/i)?.[1]?.trim() ?? '',
   ].filter(Boolean);
   for (const candidate of candidates) {
     try {
@@ -119,6 +120,7 @@ function normalizeAuthenticityResult(value: Record<string, unknown>): Authentici
     ai_generated_probability: probability(value.ai_generated_probability),
     edited_probability: probability(value.edited_probability),
     real_probability: probability(value.real_probability),
+    inconclusive_probability: probability(value.inconclusive_probability),
     confidence: probability(value.confidence),
     evidence: stringArray(value.evidence),
     possible_editing_tools: stringArray(value.possible_editing_tools),
@@ -164,7 +166,7 @@ export async function resolveOpenRouterVideoModel(durationSeconds: number, resol
 export async function analyzeImageWithOpenRouter(input: { base64: string; mimeType: string; level: 'basic' | 'medium' | 'hard' }) {
   const model = await resolveOpenRouterVisionModel();
   const depth = input.level === 'basic' ? 'basic' : input.level === 'medium' ? 'medium' : 'deep forensic';
-  const system = `You are Solamentis Image Authenticity Analyzer. Analyze the supplied image for likely AI generation, digital manipulation, compositing, camera-original characteristics, metadata/provenance clues when observable, and visual artifacts. This is forensic analysis, not moderation. Never claim certainty. Return ONLY a JSON object with exactly these keys: classification, ai_generated_probability, edited_probability, real_probability, confidence, evidence, possible_editing_tools, limitations. classification must be one of ai_generated, edited_or_composited, likely_real, inconclusive. Probabilities and confidence are numbers from 0 to 1. evidence, possible_editing_tools, and limitations are arrays of concise strings. Analysis depth: ${depth}.`;
+  const system = `You are Solamentis Image Authenticity Analyzer. Analyze the supplied image for likely AI generation, digital manipulation, compositing, camera-original characteristics, metadata/provenance clues when observable, and visual artifacts. This is forensic analysis, not moderation. Never claim certainty. Return ONLY a JSON object with exactly these keys: classification, ai_generated_probability, edited_probability, real_probability, inconclusive_probability, confidence, evidence, possible_editing_tools, limitations. classification must be one of ai_generated, edited_or_composited, likely_real, inconclusive. All four probability values and confidence are numbers from 0 to 1. The four probability values should represent the model's estimated likelihood distribution and should sum to approximately 1.0. evidence, possible_editing_tools, and limitations are arrays of concise strings. Analysis depth: ${depth}.`;
   const requestBody = {
     model,
     temperature: 0,
