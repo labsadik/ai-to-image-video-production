@@ -2,7 +2,7 @@ import { GENERATION_PLANS } from '@/config/plans';
 import { PLATFORM_SPECS, type PlatformId } from '@/config/platforms';
 import { requiredCredits, type GenerationRequest } from '@/core/ai';
 import { PolicySafetyEngine, SafetyPolicyViolation, type SafetyResult } from '@/core/safety';
-import { resolveLiveProviderModel } from './provider-config';
+import { resolveLiveEditProviderModel, resolveLiveProviderModel } from './provider-config';
 import { getActiveSafetyPolicyVersion } from './safety-events';
 
 const safety = new PolicySafetyEngine();
@@ -27,7 +27,9 @@ export async function planGeneration(request: GenerationRequest & { platform?: P
   safetyResult.policyVersion = policyVersion;
   if (safetyResult.decision !== 'allow') throw new SafetyPolicyViolation(safetyResult);
 
-  const route = await resolveLiveProviderModel(request.plan, request.quality);
+  const route = request.operation === 'editImage'
+    ? await resolveLiveEditProviderModel(request.plan, request.quality)
+    : await resolveLiveProviderModel(request.plan, request.quality);
   const plan = GENERATION_PLANS[request.plan];
   const platform = request.platform ? PLATFORM_SPECS[request.platform] : undefined;
 
