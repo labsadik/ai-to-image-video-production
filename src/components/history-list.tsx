@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertTriangle, CheckCircle2, Clock3, Download, Loader2, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock3, Download, Film, Loader2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 type HistoryItem = {
@@ -23,7 +23,7 @@ export function HistoryList({ initialItems }: { initialItems: HistoryItem[] }) {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
 
-  async function download(id: string) {
+  async function download(id: string, operation: string) {
     setDownloading(id);
     try {
       const response = await fetch(`/api/history/${id}/download`, { cache: 'no-store' });
@@ -35,7 +35,7 @@ export function HistoryList({ initialItems }: { initialItems: HistoryItem[] }) {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `solamentis-${id}.webp`;
+      anchor.download = `solamentis-${id}${operation === 'generateVideoAd' ? '.mp4' : '.webp'}`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -48,7 +48,7 @@ export function HistoryList({ initialItems }: { initialItems: HistoryItem[] }) {
   }
 
   async function remove(id: string) {
-    if (!window.confirm('Permanently delete this generation, its saved image, and history? This cannot be undone.')) return;
+    if (!window.confirm('Permanently delete this generation, its saved master asset, and history? This cannot be undone.')) return;
     setDeleting(id);
     try {
       const response = await fetch(`/api/history/${id}`, { method: 'DELETE' });
@@ -66,10 +66,12 @@ export function HistoryList({ initialItems }: { initialItems: HistoryItem[] }) {
     {items.map(item => {
       const Icon = statusIcon[item.status as keyof typeof statusIcon] ?? Clock3;
       const ready = item.status === 'succeeded';
+      const isVideo = item.operation === 'generateVideoAd';
+      const isAnalysis = item.operation === 'analyzeImage';
       return <article key={item.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-        <Link href={`/dashboard/create?history=${item.id}`} className="block">
+        <Link href={`/dashboard/media?history=${item.id}`} className="block">
           <div className="flex aspect-video items-center justify-center overflow-hidden bg-slate-950">
-            {item.previewUrl ? <img src={item.previewUrl} alt="Generated visual" className="block max-h-full max-w-full object-contain" /> : <div className="grid h-full w-full place-items-center border-b border-dashed border-slate-700"><Icon className={`size-8 ${item.status === 'processing' ? 'animate-spin' : ''} text-slate-500`} /></div>}
+            {item.previewUrl && !isAnalysis ? (isVideo ? <video src={item.previewUrl} muted playsInline className="block h-full w-full object-contain" /> : <img src={item.previewUrl} alt="Generated visual" className="block max-h-full max-w-full object-contain" />) : <div className="grid h-full w-full place-items-center border-b border-dashed border-slate-700"><div className="text-center">{isAnalysis ? <Film className="mx-auto size-8 text-slate-500" /> : <Icon className={`mx-auto size-8 ${item.status === 'processing' ? 'animate-spin' : ''} text-slate-500`} />}<p className="mt-2 text-[11px] font-medium text-slate-500">{isAnalysis ? 'Analysis result' : isVideo ? 'Video master' : 'Image master'}</p></div></div>}
           </div>
           <div className="p-5">
             <div className="flex items-center justify-between gap-3">
@@ -81,14 +83,14 @@ export function HistoryList({ initialItems }: { initialItems: HistoryItem[] }) {
           </div>
         </Link>
         <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3">
-          <Link href={`/dashboard/create?history=${item.id}`} className="text-xs font-semibold text-slate-700 hover:text-slate-950">Open in Studio</Link>
+          <Link href={`/dashboard/media?history=${item.id}`} className="text-xs font-semibold text-slate-700 hover:text-slate-950">Open in Media Studio</Link>
           <div className="flex items-center gap-1">
-            {ready && <button type="button" disabled={downloading === item.id} onClick={() => void download(item.id)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50" aria-label="Download image">{downloading === item.id ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}</button>}
+            {ready && !isAnalysis && <button type="button" disabled={downloading === item.id} onClick={() => void download(item.id, item.operation)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50" aria-label="Download master">{downloading === item.id ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}</button>}
             <button type="button" disabled={deleting === item.id} onClick={() => void remove(item.id)} className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50" aria-label="Delete history item">{deleting === item.id ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}</button>
           </div>
         </div>
       </article>;
     })}
-    {!items.length && <div className="sm:col-span-2 xl:col-span-3 rounded-3xl border border-dashed border-slate-300 bg-white p-14 text-center text-sm text-slate-500">Your generation history will appear here.</div>}
+    {!items.length && <div className="sm:col-span-2 xl:col-span-3 rounded-3xl border border-dashed border-slate-300 bg-white p-14 text-center text-sm text-slate-500">Your media history will appear here.</div>}
   </div>;
 }
