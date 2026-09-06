@@ -61,3 +61,5 @@ export function MarketingCTA() {
 export function MarketingHero3D() {
   return <div className="relative rounded-[32px] border border-slate-200 bg-slate-950 p-2 shadow-2xl"><div className="relative min-h-[420px] overflow-hidden rounded-[26px] bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,.14),transparent_35%),radial-gradient(circle_at_80%_65%,rgba(148,163,184,.12),transparent_30%)]"><div className="absolute inset-0 opacity-40 [background-image:linear-gradient(rgba(255,255,255,.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.05)_1px,transparent_1px)] [background-size:40px_40px]" /><HeroOrbit /><div className="absolute bottom-5 left-5 right-5 rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur-xl"><div className="flex items-center justify-between gap-4"><div><p className="text-[11px] font-semibold uppercase tracking-[.16em] text-slate-500">Solamentis Studio</p><p className="mt-1 text-sm font-semibold text-white">Generate · analyze · refine · deliver</p></div><WandSparkles className="size-5 text-white" /></div></div></div></div>;
 }
+
+export { Reveal };
