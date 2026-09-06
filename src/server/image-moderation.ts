@@ -66,26 +66,37 @@ function normalizeImageMimeType(value: string): string {
   return /^image\/(png|jpeg|jpg|webp|gif|bmp|tiff)$/.test(normalized) ? normalized : 'image/png';
 }
 
-async function moderateWithHuggingFaceImageClassification(input: { apiKey: string; model: string; mimeType: string; provider: string; timeoutMs: number; base64: string }): Promise<ModerationResult> {
-  const client = new InferenceClient(input.apiKey);
-  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
+async function moderateWithHuggingFaceImageClassification(input: { apiKey: string; model: string; mimeType: string; provider: string; timeoutMs: number; base64: string; baseUrl: string }): Promise<ModerationResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
   try {
     const bytes = Buffer.from(input.base64, 'base64');
     if (bytes.length === 0) throw new Error('Generated image payload is empty');
-    const imageBlob = new Blob([bytes], { type: normalizeImageMimeType(input.mimeType) });
-    const output = await client.imageClassification({
-      data: imageBlob,
-      model: input.model,
-      provider: resolveHuggingFaceProvider(input.provider),
-    }, { signal: controller.signal });
-    const entries = Array.isArray(output) ? output : [];
+    const provider = input.provider === 'auto' ? 'hf-inference' : input.provider;
+    const baseUrl = input.baseUrl.replace(/\/$/, '').replace('https://huggingface.co', 'https://router.huggingface.co');
+    const endpoint = `${baseUrl}/${provider}/models/${input.model}`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${input.apiKey}`,
+        'content-type': normalizeImageMimeType(input.mimeType),
+        accept: 'application/json',
+      },
+      body: bytes,
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    let payload: unknown;
+    try { payload = JSON.parse(text); } catch { payload = undefined; }
+    if (!response.ok) throw new Error(`Hugging Face safety classifier HTTP ${response.status}`);
+    const entries = Array.isArray(payload) ? payload.filter((item): item is { label: string; score: number } => Boolean(item && typeof item === 'object' && typeof (item as Record<string, unknown>).label === 'string' && typeof (item as Record<string, unknown>).score === 'number')) : [];
     const nsfw = entries.find(item => item.label.toLowerCase() === 'nsfw')?.score ?? 0;
     const normal = entries.find(item => item.label.toLowerCase() === 'normal')?.score ?? 0;
     if (nsfw >= 0.75) return { decision: 'block', reasons: ['Image safety classifier detected high-probability NSFW content'], score: nsfw, provider: 'huggingface', model: input.model };
     if (nsfw >= 0.4) return { decision: 'review', reasons: ['Image safety classifier detected possible NSFW content'], score: nsfw, provider: 'huggingface', model: input.model };
     return { decision: 'allow', reasons: [], score: Math.max(normal, 1 - nsfw), provider: 'huggingface', model: input.model };
-  } catch (error) {
-    return { decision: 'review', reasons: [error instanceof Error ? 'Image safety classifier unavailable. The image was not approved.' : 'Image safety classifier unavailable. The image was not approved.'], provider: 'huggingface', model: input.model };
+  } catch {
+    return { decision: 'review', reasons: ['Image safety classifier unavailable. The image was not approved.'], provider: 'huggingface', model: input.model };
   } finally { clearTimeout(timeout); }
 }
 
@@ -122,9 +133,9 @@ export async function moderateImage(input: { mimeType: string; base64: string; u
     : config.protocol === 'huggingface_vlm'
       ? await moderateWithHuggingFace({ apiKey, model: config.model, mimeType: input.mimeType, base64: input.base64, provider: hfProvider, timeoutMs: config.timeoutMs, rules })
       : config.protocol === 'huggingface_image_classification'
-        ? await moderateWithHuggingFaceImageClassification({ apiKey, model: config.model, mimeType: input.mimeType, base64: input.base64, provider: hfProvider, timeoutMs: config.timeoutMs })
+        ? await moderateWithHuggingFaceImageClassification({ apiKey, model: config.model, mimeType: input.mimeType, base64: input.base64, provider: hfProvider, timeoutMs: config.timeoutMs, baseUrl: config.baseUrl })
         : await moderateWithGenericJson({ provider: config.provider, baseUrl: config.baseUrl, timeoutMs: config.timeoutMs, apiKey, model: config.model, mimeType: input.mimeType, base64: input.base64, requestConfig: config.requestConfig as unknown as Record<string, unknown> });
-  const { error: eventError } = await admin.from('safety_events').insert({ user_id: input.userId ?? null, job_id: input.jobId ?? null, asset_id: input.assetId ?? null, policy_version: Number(policy.version), stage: input.stage, decision: result.decision, reasons: result.reasons, score: result.score ?? null, provider_id: result.provider, model_key: result.model });
+  const { error: eventError } = await admin.from('safety_events').insert({ user_id: input.userId ?? null, job_id: input.jobId ?? null, policy_version: Number(policy.version), stage: input.stage, decision: result.decision, reasons: result.reasons, score: result.score ?? null, provider_id: result.provider, model_key: result.model });
   if (eventError) throw new Error(`Safety event persistence failed: ${eventError.message}`);
   return result;
 }
