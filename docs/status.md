@@ -4,6 +4,9 @@
 
 - Next.js + TypeScript foundation
 - Node 24 CI/runtime target with lint/typecheck/build verification
+- Phase 1 commercial plans: Free 5 monthly credits, Pro 50, Business 100
+- Phase 1 generation credit costs: Basic 1, Medium 5, Ultra 10
+- Phase 1 project upload limits: Free 1, Pro 5, Business 10
 - Configuration-driven plans and platform specs
 - Live Supabase provider/model routing tables
 - Google Gemini image adapter using current image-generation API
@@ -26,6 +29,7 @@
 - Supabase secret API-key compatibility with legacy service-role fallback during migration
 - Signed private upload issuance
 - Upload issuance rate limiting and strict client metadata validation
+- Server-enforced plan upload limits from `GENERATION_PLANS`
 - Uploaded-image structural validation based on actual stored bytes
 - Uploaded-image SHA-256 checksum persistence
 - Vision-based moderation for uploaded/generated images with versioned policy selection
@@ -52,8 +56,20 @@
 - Audit-log writes for provider configuration changes
 - CI workflow for lint/typecheck/build
 - Supabase RLS/security hardening and foreign-key indexes
-- Explicit deny-by-default policies for internal operational tables
-- Supabase security advisor currently clean (0 security lints)
+- Explicit deny-by-default policies for internal operational tables, including credit grants and reservations
+
+## Verified live Supabase Phase 1 state
+
+- Project `yyeidanzflitrstvooxw` is the active Solamentis Supabase project
+- `plans` table matches Phase 1: Free 5 credits / 1 upload, Pro 50 / 5, Business 100 / 10
+- `ai_feature_routes` contains 30 category/quality routes with the expected Phase 1 plan gates
+- `ai_models` contains 13 configured provider/model records
+- `ai_providers` contains Google, Fal, Ideogram, OpenRouter-related support plus safety providers
+- `solamentis-assets` Storage bucket exists and `storage.objects` has RLS policies
+- Credit reserve/finalize/refund RPCs exist and return boolean results
+- `credit_grants` and `credit_reservations` now have explicit deny-by-default RLS policies and no direct anon/authenticated table privileges
+- Security advisor no longer reports the two credit-table RLS policy findings
+- Remaining security advisor warning: leaked password protection is disabled in Supabase Auth and must be enabled in the Supabase Auth dashboard
 
 ## Not yet launch-complete
 
@@ -77,6 +93,9 @@
 - Cost telemetry, provider spend budgets, and per-feature gross-margin controls
 - Backup/PITR restore drill, load/stress testing, and disaster-recovery verification
 - Reproducible dependency lockfile and npm-ci workflow
+- Repository/database migration history drift: the live database contains later Phase 1 migrations that are not all represented in GitHub history; new forward migrations are now tracked, but a complete historical reconciliation is still required
+- Image-analysis runtime currently uses the OpenRouter-specific implementation while the database also contains Google image-analysis routes; provider routing should be unified before claiming fully configuration-driven analysis
+- Image-edit runtime still has a legacy `ai_plan_routes` dependency; those legacy routes are disabled in the live database, so edit operations require further Phase 1 route unification
 - Migration from legacy Supabase service-role/anon key names to publishable/secret keys before the end-of-2026 deprecation window
 
 ## Important provider rule
