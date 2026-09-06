@@ -11,9 +11,9 @@ const countries = [
 ];
 
 const comparisonRows = [
-  ['Free', '10 monthly credits', '1 upload / project', 'Watermark', 'Basic image analysis'],
-  ['Pro', '100 monthly credits', '10 uploads / project', 'No watermark', 'All image analysis levels'],
-  ['Business', '1000 monthly credits', '30 uploads / project', 'No watermark', 'All image analysis levels + higher volume'],
+  ['Free', '5 monthly credits', '1 upload / project', 'Watermark', 'Basic image analysis'],
+  ['Pro', '50 monthly credits', '5 uploads / project', 'No watermark', 'All image analysis levels'],
+  ['Business', '100 monthly credits', '10 uploads / project', 'No watermark', 'All image analysis levels + higher volume'],
 ];
 
 export default async function PricingPage() {
