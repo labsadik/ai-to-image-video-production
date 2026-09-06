@@ -14,28 +14,7 @@ export interface ModerationResult {
 }
 
 type ModerationRules = { blockPatterns?: string[]; reviewPatterns?: string[] };
-
-type HuggingFaceProvider =
-  | 'auto'
-  | 'baseten'
-  | 'cerebras'
-  | 'cohere'
-  | 'deepinfra'
-  | 'fal-ai'
-  | 'featherless-ai'
-  | 'fireworks-ai'
-  | 'groq'
-  | 'hf-inference'
-  | 'novita'
-  | 'nscale'
-  | 'openai'
-  | 'ovhcloud'
-  | 'publicai'
-  | 'replicate'
-  | 'sambanova'
-  | 'scaleway'
-  | 'together'
-  | 'zai-org';
+type HuggingFaceProvider = 'auto' | 'baseten' | 'cerebras' | 'cohere' | 'deepinfra' | 'fal-ai' | 'featherless-ai' | 'fireworks-ai' | 'groq' | 'hf-inference' | 'novita' | 'nscale' | 'openai' | 'ovhcloud' | 'publicai' | 'replicate' | 'scaleway' | 'together' | 'wavespeed' | 'zai-org';
 
 function normalizeDecision(value: unknown): SafetyDecision {
   return value === 'block' || value === 'review' || value === 'allow' ? value : 'review';
@@ -72,20 +51,33 @@ function resolveHuggingFaceProvider(provider: string): HuggingFaceProvider | und
 async function moderateWithHuggingFace(input: { apiKey: string; model: string; mimeType: string; base64: string; provider: string; timeoutMs: number; rules: ModerationRules }): Promise<ModerationResult> {
   const client = new InferenceClient(input.apiKey);
   const prompt = ['You are Solamentis production image-safety moderation.','Inspect the supplied image only. Classify it into exactly one decision: allow, review, or block.','block categories:',...(input.rules.blockPatterns ?? []).map(item => `- ${item}`),'review categories:',...(input.rules.reviewPatterns ?? []).map(item => `- ${item}`),'Use block for a clearly matching blocked category. Use review for ambiguous or high-risk content. Use allow only when no listed concern is present.','Return JSON only: {"decision":"allow|review|block","reasons":["short category reason"],"score":0.0}.'].join('\n');
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
+  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
   try {
-    const out = await client.chatCompletion({
-      model: input.model,
-      messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:${input.mimeType};base64,${input.base64}` } }] }],
-      max_tokens: 256,
-      temperature: 0,
-    }, { signal: controller.signal });
+    const out = await client.chatCompletion({ model: input.model, messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:${input.mimeType};base64,${input.base64}` } }] }], max_tokens: 256, temperature: 0 }, { signal: controller.signal });
     const text = out.choices?.[0]?.message?.content;
     if (typeof text !== 'string' || !text.trim()) throw new Error('Hugging Face moderation model returned no classification');
     return normalizeResult(parseModelJson(text), 'huggingface', input.model);
   } catch (error) {
     return { decision: 'review', reasons: [error instanceof Error ? `Vision moderation unavailable: ${error.message}` : 'Vision moderation unavailable'], provider: 'huggingface', model: input.model };
+  } finally { clearTimeout(timeout); }
+}
+
+async function moderateWithHuggingFaceImageClassification(input: { apiKey: string; model: string; base64: string; provider: string; timeoutMs: number }): Promise<ModerationResult> {
+  const client = new InferenceClient(input.apiKey);
+  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
+  try {
+    const output = await client.imageClassification({ data: Buffer.from(input.base64, 'base64'), model: input.model }, {
+      provider: input.provider === 'auto' ? 'hf-inference' : resolveHuggingFaceProvider(input.provider),
+      signal: controller.signal,
+    });
+    const entries = Array.isArray(output) ? output : [];
+    const nsfw = entries.find(item => item.label.toLowerCase() === 'nsfw')?.score ?? 0;
+    const normal = entries.find(item => item.label.toLowerCase() === 'normal')?.score ?? 0;
+    if (nsfw >= 0.75) return { decision: 'block', reasons: ['Image safety classifier detected high-probability NSFW content'], score: nsfw, provider: 'huggingface', model: input.model };
+    if (nsfw >= 0.4) return { decision: 'review', reasons: ['Image safety classifier detected possible NSFW content'], score: nsfw, provider: 'huggingface', model: input.model };
+    return { decision: 'allow', reasons: [], score: Math.max(normal, 1 - nsfw), provider: 'huggingface', model: input.model };
+  } catch (error) {
+    return { decision: 'review', reasons: [error instanceof Error ? `Image safety classifier unavailable: ${error.message}` : 'Image safety classifier unavailable'], provider: 'huggingface', model: input.model };
   } finally { clearTimeout(timeout); }
 }
 
@@ -116,11 +108,14 @@ export async function moderateImage(input: { mimeType: string; base64: string; u
   const config = await resolveProviderConfig(policy.moderation_provider_id, policy.moderation_model_id);
   const apiKey = await getProviderSecret(config.provider, config.secretEnv);
   const rules = (policy.rules ?? {}) as ModerationRules;
+  const hfProvider = String((config.requestConfig as { provider?: string }).provider ?? 'auto');
   const result = config.protocol === 'google_gemini'
     ? await moderateWithGoogle({ apiKey, model: config.model, mimeType: input.mimeType, base64: input.base64, rules })
     : config.protocol === 'huggingface_vlm'
-      ? await moderateWithHuggingFace({ apiKey, model: config.model, mimeType: input.mimeType, base64: input.base64, provider: String((config.requestConfig as { provider?: string }).provider ?? 'auto'), timeoutMs: config.timeoutMs, rules })
-      : await moderateWithGenericJson({ provider: config.provider, baseUrl: config.baseUrl, timeoutMs: config.timeoutMs, apiKey, model: config.model, mimeType: input.mimeType, base64: input.base64, requestConfig: config.requestConfig as unknown as Record<string, unknown> });
+      ? await moderateWithHuggingFace({ apiKey, model: config.model, mimeType: input.mimeType, base64: input.base64, provider: hfProvider, timeoutMs: config.timeoutMs, rules })
+      : config.protocol === 'huggingface_image_classification'
+        ? await moderateWithHuggingFaceImageClassification({ apiKey, model: config.model, base64: input.base64, provider: hfProvider, timeoutMs: config.timeoutMs })
+        : await moderateWithGenericJson({ provider: config.provider, baseUrl: config.baseUrl, timeoutMs: config.timeoutMs, apiKey, model: config.model, mimeType: input.mimeType, base64: input.base64, requestConfig: config.requestConfig as unknown as Record<string, unknown> });
   const { error: eventError } = await admin.from('safety_events').insert({ user_id: input.userId ?? null, job_id: input.jobId ?? null, asset_id: input.assetId ?? null, policy_version: Number(policy.version), stage: input.stage, decision: result.decision, reasons: result.reasons, score: result.score ?? null, provider_id: result.provider, model_key: result.model });
   if (eventError) throw new Error(`Safety event persistence failed: ${eventError.message}`);
   return result;
