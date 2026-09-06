@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, LockKeyhole, Sparkles, X } from 'lucide-react';
+import { Check, Sparkles, X } from 'lucide-react';
 import { useState } from 'react';
 import { DISPLAY_PLANS, PLAN_COMPARISON_FEATURES, type BillingPeriod, type PlanId, periodLabel, qualifiesForUpcomingFeatures } from '@/config/plan-display';
 
