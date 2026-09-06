@@ -25,6 +25,8 @@ export interface RuntimeProviderConfig {
   };
 }
 
+type RuntimeProviderRouteConfig = RuntimeProviderConfig & { fallbackProviderId?: string; fallbackModelId?: string };
+
 async function getProvider(providerId: string) {
   const admin = getSupabaseAdmin();
   const { data: provider, error } = await admin.from('ai_providers').select('id,enabled,secret_env,base_url,protocol,request_config,timeout_ms').eq('id', providerId).maybeSingle();
@@ -69,7 +71,7 @@ async function resolveEnvSelectedProvider(quality: QualityKey, operation: 'gener
   return toRuntimeConfig(provider, matching.model_key);
 }
 
-export async function resolveLiveProviderModel(planId: string, quality: QualityKey): Promise<RuntimeProviderConfig & { fallbackProviderId?: string; fallbackModelId?: string }> {
+export async function resolveLiveProviderModel(planId: string, quality: QualityKey): Promise<RuntimeProviderRouteConfig> {
   const envSelected = await resolveEnvSelectedProvider(quality, 'generateImage');
   if (envSelected) return envSelected;
   const admin = getSupabaseAdmin();
@@ -80,7 +82,7 @@ export async function resolveLiveProviderModel(planId: string, quality: QualityK
   return { ...primary, fallbackProviderId: route.fallback_provider_id ?? undefined, fallbackModelId: route.fallback_model_id ?? undefined };
 }
 
-export async function resolveLiveEditProviderModel(planId: string, quality: QualityKey): Promise<RuntimeProviderConfig> {
+export async function resolveLiveEditProviderModel(planId: string, quality: QualityKey): Promise<RuntimeProviderRouteConfig> {
   const envSelected = await resolveEnvSelectedProvider(quality, 'editImage');
   if (envSelected) return envSelected;
   const admin = getSupabaseAdmin();
