@@ -1,5 +1,3 @@
-import 'server-only';
-
 import { getSupabaseAdmin } from './supabase-admin';
 
 export interface RateLimitResult {
