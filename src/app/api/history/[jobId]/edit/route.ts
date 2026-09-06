@@ -27,10 +27,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
     if (!original) return NextResponse.json({ error: 'History item not found' }, { status: 404 });
     if (original.status !== 'succeeded') return NextResponse.json({ error: 'Only completed generations can be edited' }, { status: 409 });
 
-    const { data: outputs, error: outputError } = await admin.from('generation_outputs').select('storage_path,mime_type,variant').eq('job_id', original.id).in('variant', ['editor', 'preview']);
+    const { data: source, error: outputError } = await admin.from('generation_outputs').select('storage_path,mime_type').eq('job_id', original.id).eq('variant', 'master').maybeSingle();
     if (outputError) throw new Error(`History image lookup failed: ${outputError.message}`);
-    const source = outputs?.find(item => item.variant === 'editor') ?? outputs?.find(item => item.variant === 'preview');
-    if (!source) return NextResponse.json({ error: 'Editable source image is unavailable' }, { status: 404 });
+    if (!source) return NextResponse.json({ error: 'Source image is unavailable' }, { status: 404 });
 
     const originalRequest = (original.request ?? {}) as Record<string, unknown>;
     const plan = String(originalRequest.plan ?? 'free') as keyof typeof GENERATION_PLANS;
