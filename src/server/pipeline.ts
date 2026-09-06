@@ -52,7 +52,7 @@ export async function planGeneration(request: GenerationRequest & { platform?: P
     safety: safetyResult,
     category,
     requestedQuality,
-    fallbackProviderId: 'fallbackProviderId' in route ? route.fallbackProviderId : undefined,
-    fallbackModelId: 'fallbackModelId' in route ? route.fallbackModelId : undefined,
+    fallbackProviderId: route.fallbackProviderId,
+    fallbackModelId: route.fallbackModelId,
   };
 }
