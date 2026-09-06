@@ -8,23 +8,31 @@ const COUNTRIES: Record<string, { name: string; locale: string }> = {
   IN: { name: 'India', locale: 'en-IN' }, US: { name: 'United States', locale: 'en-US' }, BD: { name: 'Bangladesh', locale: 'en-BD' }, GB: { name: 'United Kingdom', locale: 'en-GB' }, AE: { name: 'United Arab Emirates', locale: 'en-AE' },
 };
 
+async function readProfilePayload(userId: string, profile: Record<string, any> | null) {
+  const admin = getSupabaseAdmin();
+  const { data: subscription } = await admin.from('subscriptions').select('id,plan_id,status,provider,current_period_start,current_period_end,country_code,currency,cancel_at_period_end,created_at,updated_at').eq('user_id', userId).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+  const billingCountry = subscription?.country_code || profile?.billing_country_code || profile?.country_code || 'IN';
+  const { data: price } = await admin.from('plan_prices').select('currency,unit_amount_minor').eq('plan_id', profile?.plan_id || 'free').eq('country_code', billingCountry).eq('active', true).maybeSingle();
+  return { profile, subscription, planPrice: { currency: price?.currency || subscription?.currency || 'USD', unit_amount_minor: price?.unit_amount_minor || 0 } };
+}
+
 export async function GET(request: Request) {
   const client = await getSupabaseServerClient();
   const { data: { user } } = await client.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const admin = getSupabaseAdmin();
   const detected = request.headers.get('x-vercel-ip-country')?.toUpperCase() || null;
-  const profile = await admin.from('profiles').select('*').eq('id', user.id).maybeSingle();
-  if (profile.error) return NextResponse.json({ error: profile.error.message }, { status: 500 });
-  if (!profile.data) {
+  const existing = await admin.from('profiles').select('*').eq('id', user.id).maybeSingle();
+  if (existing.error) return NextResponse.json({ error: existing.error.message }, { status: 500 });
+  if (!existing.data) {
     const country = detected && COUNTRIES[detected] ? detected : null;
     const { data } = await admin.from('profiles').insert({ id: user.id, email: user.email, full_name: user.user_metadata?.full_name ?? null, phone: user.phone ?? null, country_code: country, country_name: country ? COUNTRIES[country].name : null, locale: country ? COUNTRIES[country].locale : null, last_seen_at: new Date().toISOString() }).select('*').single();
-    return NextResponse.json({ profile: data ?? null });
+    return NextResponse.json(await readProfilePayload(user.id, data));
   }
-  const updates: Record<string, unknown> = { last_seen_at: new Date().toISOString(), email: user.email ?? profile.data.email, phone: user.phone ?? profile.data.phone };
-  if (!profile.data.detected_country_code && detected && COUNTRIES[detected]) updates.detected_country_code = detected;
+  const updates: Record<string, unknown> = { last_seen_at: new Date().toISOString(), email: user.email ?? existing.data.email, phone: user.phone ?? existing.data.phone };
+  if (!existing.data.detected_country_code && detected && COUNTRIES[detected]) updates.detected_country_code = detected;
   await admin.from('profiles').update(updates).eq('id', user.id);
-  return NextResponse.json({ profile: { ...profile.data, ...updates } });
+  return NextResponse.json(await readProfilePayload(user.id, { ...existing.data, ...updates }));
 }
 
 export async function PATCH(request: Request) {
@@ -49,6 +57,6 @@ export async function PATCH(request: Request) {
     const { data, error } = await admin.from('profiles').update(updates).eq('id', user.id).select('*').single();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     await admin.auth.admin.updateUserById(user.id, { user_metadata: { ...user.user_metadata, full_name: fullName } });
-    return NextResponse.json({ profile: data });
+    return NextResponse.json(await readProfilePayload(user.id, data));
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to update profile' }, { status: 400 }); }
 }
