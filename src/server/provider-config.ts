@@ -1,7 +1,7 @@
 import { getSupabaseAdmin } from './supabase-admin';
 import type { QualityKey } from '@/config/providers';
 
-export type ProviderProtocol = 'google_gemini' | 'openai_images' | 'generic_json' | 'huggingface_image';
+export type ProviderProtocol = 'google_gemini' | 'openai_images' | 'generic_json' | 'huggingface_image' | 'huggingface_vlm';
 
 export interface RuntimeProviderConfig {
   provider: string;
