@@ -1,80 +1,28 @@
 'use client';
 
-import { Check, LockKeyhole, X } from 'lucide-react';
+import { Check, LockKeyhole, Sparkles, X } from 'lucide-react';
 import { useState } from 'react';
 import { DISPLAY_PLANS, PLAN_COMPARISON_FEATURES, type BillingPeriod, type PlanId, periodLabel, qualifiesForUpcomingFeatures } from '@/config/plan-display';
 
-type Props = {
-  prices?: Record<string, number>;
-  currency?: string;
-  initialPlan?: PlanId;
-};
+type Props = { prices?: Record<string, number>; currency?: string; initialPlan?: PlanId };
 
 export function PlanComparison({ prices = {}, currency = 'USD', initialPlan = 'pro' }: Props) {
   const [period, setPeriod] = useState<BillingPeriod>(1);
   const [compareOpen, setCompareOpen] = useState(false);
   const [selected, setSelected] = useState<PlanId>(initialPlan);
-
   const priceFor = (planId: PlanId) => prices[planId] ?? DISPLAY_PLANS.find((p) => p.id === planId)?.monthlyFallbackMinor ?? 0;
   const total = (planId: PlanId) => priceFor(planId) * period;
-
-  return (
-    <>
-      <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-slate-950">Choose your billing period</p>
-          <p className="mt-1 text-xs leading-5 text-slate-500">One month, six months, or one year. Pricing is based on the regional monthly rate.</p>
-        </div>
-        <div className="grid w-full grid-cols-3 rounded-xl bg-slate-100 p-1 sm:w-auto">
-          {([1, 6, 12] as BillingPeriod[]).map((item) => (
-            <button key={item} type="button" onClick={() => setPeriod(item)} className={`min-h-10 rounded-lg px-3 text-xs font-semibold transition ${period === item ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>
-              {periodLabel(item)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-3">
-        {DISPLAY_PLANS.map((plan) => {
-          const Icon = plan.icon;
-          const active = selected === plan.id;
-          const upcoming = plan.id !== 'free' && qualifiesForUpcomingFeatures(plan.id, period);
-          return (
-            <article key={plan.id} className={`relative flex min-w-0 flex-col overflow-hidden rounded-3xl border p-6 shadow-sm transition ${active ? 'border-slate-950 bg-slate-950 text-white shadow-xl' : 'border-slate-200 bg-white hover:-translate-y-0.5 hover:shadow-md'}`}>
-              {plan.id === 'pro' && <div className="absolute right-4 top-4 rounded-full bg-slate-900/5 p-2 dark:bg-white/5"><SparkleBadge /></div>}
-              <div className="flex items-start gap-3 pr-10">
-                <div className={`grid size-11 place-items-center rounded-2xl ${active ? 'bg-white text-slate-950' : 'bg-slate-100 text-slate-700'}`}><Icon className="size-5" /></div>
-                <div className="min-w-0"><p className="text-base font-semibold">{plan.name}</p><p className={`mt-1 text-xs leading-5 ${active ? 'text-slate-400' : 'text-slate-500'}`}>{plan.description}</p></div>
-              </div>
-              <div className="mt-7 flex items-end gap-1"><span className="text-3xl font-semibold tracking-tight">{priceFor(plan.id) ? `${currency} ${(priceFor(plan.id) / 100).toLocaleString()}` : 'Free'}</span><span className={`pb-1 text-xs ${active ? 'text-slate-400' : 'text-slate-500'}`}>/ month</span></div>
-              <p className={`mt-1 text-xs ${active ? 'text-slate-400' : 'text-slate-500'}`}>{periodLabel(period)} total · {total(plan.id) ? `${currency} ${(total(plan.id) / 100).toLocaleString()}` : 'No charge'}</p>
-              <div className="mt-6 flex-1 space-y-3">
-                {plan.features.map((feature) => <div key={feature} className="flex gap-2 text-sm"><Check className={`mt-0.5 size-4 shrink-0 ${active ? 'text-white' : 'text-emerald-600'}`} /><span>{feature}</span></div>)}
-                {upcoming && <div className={`rounded-xl border p-3 text-xs font-semibold ${active ? 'border-white/10 bg-white/5 text-white' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>Early access to upcoming features included for {periodLabel(period)}.</div>}
-              </div>
-              <button type="button" onClick={() => setSelected(plan.id)} className={`mt-7 min-h-11 rounded-xl px-4 text-sm font-semibold ${active ? 'bg-white text-slate-950' : 'bg-slate-950 text-white hover:bg-slate-800'}`}>{active ? 'Selected' : 'Select plan'}</button>
-            </article>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
-        <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-slate-400">Plan comparison</p><p className="mt-2 text-sm text-slate-600">Compare every plan feature, limits, and the current {periodLabel(period)} pricing.</p></div>
-        <button type="button" onClick={() => setCompareOpen(true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50">Compare all plans</button>
-      </div>
-
-      {compareOpen && <div className="fixed inset-0 z-[120] bg-slate-950/70 p-4 backdrop-blur-sm sm:p-8" role="dialog" aria-modal="true" aria-label="Compare plans" onClick={() => setCompareOpen(false)}>
-        <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 sm:px-7"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-slate-400">Comparison</p><h2 className="mt-1 text-lg font-semibold">All plans · {periodLabel(period)}</h2></div><button type="button" onClick={() => setCompareOpen(false)} aria-label="Close comparison" className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"><X className="size-5" /></button></div>
-          <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-7">
-            <div className="overflow-x-auto"><table className="w-full min-w-[720px] border-separate border-spacing-0 text-left"><thead><tr><th className="sticky left-0 z-10 border-b border-slate-200 bg-white px-3 py-3 text-xs font-semibold text-slate-500">Feature</th>{DISPLAY_PLANS.map((plan) => <th key={plan.id} className="border-b border-slate-200 px-3 py-3 text-sm font-semibold text-slate-950">{plan.name}</th>)}</tr></thead><tbody>{PLAN_COMPARISON_FEATURES.map((feature) => <tr key={feature.key}><td className="sticky left-0 z-10 border-b border-slate-100 bg-white px-3 py-3 text-xs font-medium text-slate-600">{feature.label}</td>{DISPLAY_PLANS.map((plan) => <td key={plan.id} className="border-b border-slate-100 px-3 py-3 text-xs text-slate-600">{feature.format(plan)}</td>)}</tr>)}<tr><td className="sticky left-0 z-10 bg-white px-3 py-3 text-xs font-medium text-slate-600">Current period total</td>{DISPLAY_PLANS.map((plan) => <td key={plan.id} className="px-3 py-3 text-sm font-semibold text-slate-950">{priceFor(plan.id) ? `${currency} ${(total(plan.id) / 100).toLocaleString()}` : 'Free'}</td>)}</tr><tr><td className="sticky left-0 z-10 bg-white px-3 py-3 text-xs font-medium text-slate-600">Upcoming features access</td>{DISPLAY_PLANS.map((plan) => <td key={plan.id} className="px-3 py-3 text-xs">{qualifiesForUpcomingFeatures(plan.id, period) ? <span className="inline-flex items-center gap-1.5 font-semibold text-amber-700"><LockKeyhole className="size-3.5" /> Included</span> : 'Not included'}</td>)}</tr></tbody></table></div>
-          </div>
-        </div>
-      </div>}
-    </>
-  );
-}
-
-function SparkleBadge() {
-  return <span className="relative grid size-7 place-items-center" aria-label="Premium plan"><span className="absolute size-7 animate-pulse rounded-full bg-white/10"/><span className="relative text-lg leading-none">✦</span></span>;
+  return <>
+    <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-slate-950">Choose your billing period</p><p className="mt-1 text-xs leading-5 text-slate-500">One month, six months, or one year. Pricing is based on the regional monthly rate.</p></div><div className="grid w-full grid-cols-3 rounded-xl bg-slate-100 p-1 sm:w-auto">{([1,6,12] as BillingPeriod[]).map((item)=><button key={item} type="button" onClick={()=>setPeriod(item)} className={`min-h-10 rounded-lg px-3 text-xs font-semibold transition ${period===item?'bg-white text-slate-950 shadow-sm':'text-slate-500 hover:text-slate-900'}`}>{periodLabel(item)}</button>)}</div></div>
+    <div className="grid gap-5 lg:grid-cols-3">{DISPLAY_PLANS.map((plan)=>{const Icon=plan.icon;const active=selected===plan.id;const upcoming=plan.id!=='free'&&qualifiesForUpcomingFeatures(plan.id,period);return <article key={plan.id} className={`relative flex min-w-0 flex-col overflow-hidden rounded-3xl border p-6 shadow-sm transition ${active?'border-slate-950 bg-slate-950 text-white shadow-xl':'border-slate-200 bg-white hover:-translate-y-0.5 hover:shadow-md'}`}>
+      {plan.id==='pro'&&<div className="absolute right-4 top-4 rounded-full bg-slate-950 p-2 text-white shadow-lg" aria-label="Premium plan"><Sparkles className="size-4"/></div>}
+      <div className="flex items-start gap-3 pr-10"><div className={`grid size-11 place-items-center rounded-2xl ${active?'bg-white text-slate-950':'bg-slate-100 text-slate-700'}`}><Icon className="size-5"/></div><div className="min-w-0"><p className="text-base font-semibold">{plan.name}</p><p className={`mt-1 text-xs leading-5 ${active?'text-slate-400':'text-slate-500'}`}>{plan.description}</p></div></div>
+      <div className="mt-7 flex items-end gap-1"><span className="text-3xl font-semibold tracking-tight">{priceFor(plan.id)?`${currency} ${(priceFor(plan.id)/100).toLocaleString()}`:'Free'}</span><span className={`pb-1 text-xs ${active?'text-slate-400':'text-slate-500'}`}>/ month</span></div>
+      <p className={`mt-1 text-xs ${active?'text-slate-400':'text-slate-500'}`}>{periodLabel(period)} total · {total(plan.id)?`${currency} ${(total(plan.id)/100).toLocaleString()}`:'No charge'}</p>
+      <div className="mt-6 flex-1 space-y-3">{plan.features.map((feature)=><div key={feature} className="flex gap-2 text-sm"><Check className={`mt-0.5 size-4 shrink-0 ${active?'text-white':'text-emerald-600'}`}/><span>{feature}</span></div>)}{upcoming&&<div className={`rounded-xl border p-3 text-xs font-semibold ${active?'border-white/10 bg-white/5 text-white':'border-amber-200 bg-amber-50 text-amber-800'}`}>Early access to upcoming features included for {periodLabel(period)}.</div>}</div>
+      <button type="button" onClick={()=>setSelected(plan.id)} className={`mt-7 min-h-11 rounded-xl px-4 text-sm font-semibold ${active?'bg-white text-slate-950':'bg-slate-950 text-white hover:bg-slate-800'}`}>{active?'Selected':'Select plan'}</button>
+    </article>})}</div>
+    <div className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-slate-400">Plan comparison</p><p className="mt-2 text-sm text-slate-600">Compare every plan feature, limits, and the current {periodLabel(period)} pricing.</p></div><button type="button" onClick={()=>setCompareOpen(true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50">Compare all plans</button></div>
+    {compareOpen&&<div className="fixed inset-0 z-[120] bg-slate-950/70 p-4 backdrop-blur-sm sm:p-8" role="dialog" aria-modal="true" aria-label="Compare plans" onClick={()=>setCompareOpen(false)}><div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl" onClick={(e)=>e.stopPropagation()}><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 sm:px-7"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-slate-400">Comparison</p><h2 className="mt-1 text-lg font-semibold">All plans · {periodLabel(period)}</h2></div><button type="button" onClick={()=>setCompareOpen(false)} aria-label="Close comparison" className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"><X className="size-5"/></button></div><div className="min-h-0 flex-1 overflow-auto p-4 sm:p-7"><div className="overflow-x-auto"><table className="w-full min-w-[720px] border-separate border-spacing-0 text-left"><thead><tr><th className="sticky left-0 z-10 border-b border-slate-200 bg-white px-3 py-3 text-xs font-semibold text-slate-500">Feature</th>{DISPLAY_PLANS.map((plan)=><th key={plan.id} className="border-b border-slate-200 px-3 py-3 text-sm font-semibold text-slate-950">{plan.name}</th>)}</tr></thead><tbody>{PLAN_COMPARISON_FEATURES.map((feature)=><tr key={feature.key}><td className="sticky left-0 z-10 border-b border-slate-100 bg-white px-3 py-3 text-xs font-medium text-slate-600">{feature.label}</td>{DISPLAY_PLANS.map((plan)=><td key={plan.id} className="border-b border-slate-100 px-3 py-3 text-xs text-slate-600">{feature.format(plan)}</td>)}</tr>)}<tr><td className="sticky left-0 z-10 bg-white px-3 py-3 text-xs font-medium text-slate-600">Current period total</td>{DISPLAY_PLANS.map((plan)=><td key={plan.id} className="px-3 py-3 text-sm font-semibold text-slate-950">{priceFor(plan.id)?`${currency} ${(total(plan.id)/100).toLocaleString()}`:'Free'}</td>)}</tr><tr><td className="sticky left-0 z-10 bg-white px-3 py-3 text-xs font-medium text-slate-600">Upcoming features access</td>{DISPLAY_PLANS.map((plan)=><td key={plan.id} className="px-3 py-3 text-xs">{qualifiesForUpcomingFeatures(plan.id,period)?<span className="font-semibold text-amber-700">Included</span>:'Not included'}</td>)}</tr></tbody></table></div></div></div></div>}
+  </>;
 }
