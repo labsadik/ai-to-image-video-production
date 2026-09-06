@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       base64: buffer.toString('base64'),
       userId: user.id,
       assetId: asset.id,
-      stage: 'upload_image_moderation',
+      stage: 'upload',
     });
     const status = moderation.decision === 'allow' ? 'ready' : moderation.decision === 'review' ? 'review' : 'blocked';
 
