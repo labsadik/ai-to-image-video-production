@@ -43,89 +43,41 @@ export async function resolvePollinationsImageModel() {
 export async function resolvePollinationsVideoModel(resolution: '720p' | '1080p') {
   return configuredModel(
     resolution === '1080p' ? 'POLLINATIONS_VIDEO_HIGH_MODEL' : 'POLLINATIONS_VIDEO_MODEL',
-    resolution === '1080p' ? 'seedance-pro' : 'veo',
+    'minimax-h3',
   );
 }
 
-export async function generatePollinationsVideo(input: {
-  model: string;
-  prompt: string;
-  durationSeconds: number;
-}) {
+export async function generatePollinationsVideo(input: { model: string; prompt: string; durationSeconds: number }) {
   const url = `${API_BASE}/video/${encodedPrompt(input.prompt)}?model=${encodeURIComponent(input.model)}&duration=${encodeURIComponent(String(input.durationSeconds))}`;
   const response = await fetch(url, { headers: { Authorization: `Bearer ${requiredKey()}` } });
-  if (!response.ok) {
-    throw new Error(`Pollinations video HTTP ${response.status}: ${(await response.text()).slice(0, 1000)}`);
-  }
-  return {
-    buffer: Buffer.from(await response.arrayBuffer()),
-    mimeType: response.headers.get('content-type') || 'video/mp4',
-  };
+  if (!response.ok) throw new Error(`Pollinations video HTTP ${response.status}: ${(await response.text()).slice(0, 1000)}`);
+  return { buffer: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get('content-type') || 'video/mp4' };
 }
 
 export class PollinationsImageProviderAdapter implements ProviderAdapter {
   get provider() { return 'pollinations'; }
 
   async generate(request: GenerationRequest & { model: string; apiKey: string }): Promise<ProviderResult> {
-    if ((request.referenceImages ?? []).length > 0) {
-      throw new Error('Pollinations image generation currently uses text-to-image only in Solamentis; use an OpenRouter/DB route for reference-image generation.');
-    }
-
-    const payload = await pollinationsJson('/v1/images/generations', {
-      method: 'POST',
-      body: JSON.stringify({
-        model: request.model,
-        prompt: request.prompt,
-        n: 1,
-        size: `${request.width}x${request.height}`,
-      }),
-    }) as { data?: Array<{ b64_json?: string; mime_type?: string; media_type?: string; url?: string }> };
-
+    if ((request.referenceImages ?? []).length > 0) throw new Error('Pollinations image generation currently uses text-to-image only; use a provider route with reference-image support for image references.');
+    const payload = await pollinationsJson('/v1/images/generations', { method: 'POST', body: JSON.stringify({ model: request.model, prompt: request.prompt, n: 1, size: `${request.width}x${request.height}` }) }) as { data?: Array<{ b64_json?: string; mime_type?: string; media_type?: string; url?: string }> };
     const image = payload.data?.[0];
     if (!image) throw new Error('Pollinations image response did not contain an image');
-
-    if (image.b64_json) {
-      return {
-        externalId: crypto.randomUUID(),
-        mimeType: image.mime_type || image.media_type || 'image/png',
-        base64: image.b64_json,
-        providerMetadata: { protocol: 'pollinations_images', model: request.model },
-      };
-    }
-
+    if (image.b64_json) return { externalId: crypto.randomUUID(), mimeType: image.mime_type || image.media_type || 'image/png', base64: image.b64_json, providerMetadata: { protocol: 'pollinations_images', model: request.model } };
     if (image.url) {
       const media = await fetch(image.url);
       if (!media.ok) throw new Error(`Pollinations generated image download failed: HTTP ${media.status}`);
-      return {
-        externalId: crypto.randomUUID(),
-        mimeType: media.headers.get('content-type') || 'image/png',
-        base64: Buffer.from(await media.arrayBuffer()).toString('base64'),
-        providerMetadata: { protocol: 'pollinations_images', model: request.model },
-      };
+      return { externalId: crypto.randomUUID(), mimeType: media.headers.get('content-type') || 'image/png', base64: Buffer.from(await media.arrayBuffer()).toString('base64'), providerMetadata: { protocol: 'pollinations_images', model: request.model } };
     }
-
     throw new Error('Pollinations image response did not contain b64_json or url');
   }
 
   async healthCheck() {
     const started = Date.now();
-    try {
-      const response = await fetch(`${API_BASE}/v1/models`);
-      return { ok: response.ok, latencyMs: Date.now() - started, message: response.ok ? undefined : `HTTP ${response.status}` };
-    } catch (error) {
-      return { ok: false, latencyMs: Date.now() - started, message: error instanceof Error ? error.message : 'Pollinations health check failed' };
-    }
+    try { const response = await fetch(`${API_BASE}/v1/models`); return { ok: response.ok, latencyMs: Date.now() - started, message: response.ok ? undefined : `HTTP ${response.status}` }; }
+    catch (error) { return { ok: false, latencyMs: Date.now() - started, message: error instanceof Error ? error.message : 'Pollinations health check failed' }; }
   }
 }
 
 export function pollinationsRuntimeConfig(model: string): RuntimeProviderConfig {
-  return {
-    provider: 'pollinations',
-    protocol: 'pollinations_images',
-    baseUrl: API_BASE,
-    secretEnv: 'POLLINATIONS_API_KEY',
-    model,
-    timeoutMs: Number(process.env.POLLINATIONS_TIMEOUT_MS ?? 180000),
-    requestConfig: {},
-  };
+  return { provider: 'pollinations', protocol: 'pollinations_images', baseUrl: API_BASE, secretEnv: 'POLLINATIONS_API_KEY', model, timeoutMs: Number(process.env.POLLINATIONS_TIMEOUT_MS ?? 180000), requestConfig: {} };
 }
