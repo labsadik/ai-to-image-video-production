@@ -3,6 +3,29 @@ import 'server-only';
 import { getSupabaseAdmin } from './supabase-admin';
 import type { SafetyDecision } from '@/core/safety';
 
+export type SafetyEventStage = 'prompt' | 'upload' | 'generation' | 'edit' | 'export' | 'detector';
+
+function normalizeSafetyStage(stage: string): SafetyEventStage {
+  switch (stage) {
+    case 'prompt':
+    case 'prompt_validation':
+      return 'prompt';
+    case 'upload':
+      return 'upload';
+    case 'generation':
+    case 'post_generation_image_moderation':
+      return 'generation';
+    case 'edit':
+      return 'edit';
+    case 'export':
+      return 'export';
+    case 'detector':
+      return 'detector';
+    default:
+      throw new Error(`Unsupported safety event stage: ${stage}`);
+  }
+}
+
 export async function getActiveSafetyPolicyVersion(): Promise<number> {
   const admin = getSupabaseAdmin();
   const { data } = await admin.from('safety_policies').select('version').eq('status', 'active').order('version', { ascending: false }).limit(1).maybeSingle();
@@ -26,7 +49,7 @@ export async function recordSafetyEvent(input: {
     job_id: input.jobId ?? null,
     asset_id: input.assetId ?? null,
     policy_version: policyVersion,
-    stage: input.stage,
+    stage: normalizeSafetyStage(input.stage),
     decision: input.decision,
     reasons: input.reasons,
     score: input.score ?? null,
