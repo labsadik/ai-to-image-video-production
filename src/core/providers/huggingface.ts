@@ -22,10 +22,12 @@ export class HuggingFaceImageProviderAdapter implements ProviderAdapter {
         const reference = request.referenceImages?.[0];
         if (!reference) throw new Error('An input image is required for editing');
         const data = Buffer.from(reference.base64, 'base64');
+        const bytes = new Uint8Array(data.byteLength);
+        bytes.set(data);
         const image = await client.imageToImage({
           model: request.model,
           provider: this.config.provider as 'auto' | 'hf-inference' | 'fal-ai',
-          inputs: data,
+          inputs: new Blob([bytes], { type: reference.mimeType || 'image/webp' }),
           parameters: {
             prompt: request.prompt,
             target_size: { width: request.width, height: request.height },
