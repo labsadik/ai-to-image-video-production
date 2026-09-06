@@ -9,6 +9,16 @@ export const PROVIDER_CATALOG = {
       premium: 'gemini-3-pro-image',
     },
   },
+  huggingface: {
+    enabled: true,
+    secretEnv: 'HF_TOKEN',
+    baseUrl: 'https://huggingface.co',
+    models: {
+      preview: 'black-forest-labs/FLUX.1-schnell',
+      standard: 'black-forest-labs/FLUX.1-schnell',
+      premium: 'black-forest-labs/FLUX.1-schnell',
+    },
+  },
   openai: {
     enabled: false,
     secretEnv: 'OPENAI_API_KEY',
