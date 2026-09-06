@@ -15,8 +15,8 @@ export const PROVIDER_CATALOG = {
     baseUrl: 'https://huggingface.co',
     models: {
       preview: 'black-forest-labs/FLUX.1-schnell',
-      standard: 'black-forest-labs/FLUX.1-schnell',
-      premium: 'black-forest-labs/FLUX.1-schnell',
+      standard: '',
+      premium: '',
     },
   },
   openai: {
