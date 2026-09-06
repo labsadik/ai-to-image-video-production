@@ -23,6 +23,12 @@ function readLegacyPaths(metadata: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : [];
 }
 
+async function signedOutput(admin: ReturnType<typeof getSupabaseAdmin>, output: { id: string; variant: string; storage_path: string; mime_type: string; width: number; height: number; byte_size: number; created_at: string } | null) {
+  if (!output) return null;
+  const { data, error } = await admin.storage.from('solamentis-assets').createSignedUrl(output.storage_path, 3600);
+  return { ...output, url: error ? null : data?.signedUrl ?? null };
+}
+
 export async function GET(_request: Request, { params }: { params: Promise<{ jobId: string }> }) {
   try {
     const user = await getUser();
@@ -32,19 +38,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ job
     const job = await loadOwnedJob(jobId, user.id);
     if (!job) return NextResponse.json({ error: 'History item not found' }, { status: 404 });
 
-    const [{ data: output, error: outputError }, projectResult] = await Promise.all([
-      admin.from('generation_outputs').select('id,variant,storage_path,mime_type,width,height,byte_size,created_at').eq('job_id', job.id).eq('variant', 'master').maybeSingle(),
+    const [{ data: outputs, error: outputError }, projectResult] = await Promise.all([
+      admin.from('generation_outputs').select('id,variant,storage_path,mime_type,width,height,byte_size,created_at').eq('job_id', job.id).in('variant', ['master', 'preview']),
       job.project_id ? admin.from('projects').select('id,name,platform,width,height,metadata,created_at,updated_at').eq('id', job.project_id).eq('user_id', user.id).maybeSingle() : Promise.resolve({ data: null, error: null }),
     ]);
     if (outputError) throw new Error(`History output lookup failed: ${outputError.message}`);
 
-    let master = null;
-    if (output) {
-      const { data, error } = await admin.storage.from('solamentis-assets').createSignedUrl(output.storage_path, 3600);
-      master = { ...output, url: error ? null : data?.signedUrl ?? null };
-    }
-
-    return NextResponse.json({ job, project: projectResult.data ?? null, output: master });
+    const master = await signedOutput(admin, (outputs ?? []).find(item => item.variant === 'master') ?? null);
+    const preview = await signedOutput(admin, (outputs ?? []).find(item => item.variant === 'preview') ?? null);
+    return NextResponse.json({ job, project: projectResult.data ?? null, output: master, preview });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to load history item' }, { status: 400 });
   }
@@ -95,7 +97,6 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     // Keep the credit ledger immutable for auditability. Creative history deletion must not erase accounting records.
     const { error: jobDeleteError } = await admin.from('generation_jobs').delete().eq('id', job.id).eq('user_id', user.id);
     if (jobDeleteError) throw new Error(`History job deletion failed: ${jobDeleteError.message}`);
-
     return NextResponse.json({ deleted: true, jobId: job.id });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to delete history item' }, { status: 400 });
