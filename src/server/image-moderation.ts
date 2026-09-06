@@ -3,6 +3,7 @@ import { InferenceClient } from '@huggingface/inference';
 import { getSupabaseAdmin } from './supabase-admin';
 import { getProviderSecret } from './provider-secrets';
 import { resolveProviderConfig } from './provider-config';
+import { recordSafetyEvent } from './safety-events';
 import type { SafetyDecision } from '@/core/safety';
 
 export interface ModerationResult {
@@ -151,7 +152,19 @@ export async function moderateImage(input: { mimeType: string; base64: string; u
       : config.protocol === 'huggingface_image_classification'
         ? await moderateWithHuggingFaceImageClassification({ apiKey, model: config.model, mimeType: input.mimeType, provider: hfProvider, timeoutMs: config.timeoutMs, base64: input.base64, baseUrl: config.baseUrl, requestConfig: config.requestConfig as HuggingFaceModerationConfig })
         : await moderateWithGenericJson({ provider: config.provider, baseUrl: config.baseUrl, timeoutMs: config.timeoutMs, apiKey, model: config.model, mimeType: input.mimeType, base64: input.base64, requestConfig: config.requestConfig as unknown as Record<string, unknown> });
-  const { error: eventError } = await admin.from('safety_events').insert({ user_id: input.userId ?? null, job_id: input.jobId ?? null, policy_version: Number(policy.version), stage: input.stage, decision: result.decision, reasons: result.reasons, score: result.score ?? null, provider_id: result.provider, model_key: result.model });
-  if (eventError) throw new Error(`Safety event persistence failed: ${eventError.message}`);
+
+  await recordSafetyEvent({
+    userId: input.userId,
+    jobId: input.jobId,
+    assetId: input.assetId,
+    stage: input.stage,
+    decision: result.decision,
+    reasons: result.reasons,
+    score: result.score,
+    policyVersion: Number(policy.version),
+    providerId: result.provider,
+    modelKey: result.model,
+  });
+
   return result;
 }
