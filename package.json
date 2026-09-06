@@ -7,6 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "worker": "tsx scripts/generation-worker.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
@@ -28,6 +29,7 @@
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
     "eslint": "10.9.1",
+    "tsx": "4.20.5",
     "typescript": "7.0.2"
   }
 }
