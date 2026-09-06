@@ -37,11 +37,11 @@ export async function POST(request: Request) {
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const idempotencyKey = `image-analysis:${randomUUID()}`;
     const credits = imageAnalysisCredits(plan, level);
-
     const { data: reserved, error: reserveError } = await admin.rpc('reserve_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: idempotencyKey });
     if (reserveError) throw new Error(`Credit reservation failed: ${reserveError.message}`);
     if (!reserved) return NextResponse.json({ error: 'Insufficient credits' }, { status: 402 });
 
+    let creditsFinalized = false;
     try {
       const started = Date.now();
       const analysis = await analyzeImageWithOpenRouter({ base64, mimeType: file.type, level });
@@ -76,10 +76,12 @@ export async function POST(request: Request) {
 
       const { error: finalizeError } = await admin.rpc('finalize_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: idempotencyKey });
       if (finalizeError) throw new Error(`Credit finalization failed: ${finalizeError.message}`);
-      await admin.from('generation_jobs').update({ status: 'succeeded', reserved_credits: 0, completed_at: new Date().toISOString(), request: analysisJobRequest }).eq('id', job.id);
+      creditsFinalized = true;
+      const { error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', reserved_credits: 0, completed_at: new Date().toISOString(), request: analysisJobRequest }).eq('id', job.id);
+      if (completeError) throw new Error(`Analysis history completion failed: ${completeError.message}`);
       return NextResponse.json({ jobId: job.id, provider: analysis.provider, model: analysis.model, level, credits, imageSha256: sha256, safetyApplied: false, result: analysis.result });
     } catch (error) {
-      await admin.rpc('refund_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: `${idempotencyKey}:refund` });
+      if (!creditsFinalized) await admin.rpc('refund_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: `${idempotencyKey}:refund` });
       throw error;
     }
   } catch (error) {
