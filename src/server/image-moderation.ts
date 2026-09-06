@@ -62,15 +62,17 @@ async function moderateWithHuggingFace(input: { apiKey: string; model: string; m
   } finally { clearTimeout(timeout); }
 }
 
-async function moderateWithHuggingFaceImageClassification(input: { apiKey: string; model: string; base64: string; provider: string; timeoutMs: number }): Promise<ModerationResult> {
+async function moderateWithHuggingFaceImageClassification(input: { apiKey: string; model: string; provider: string; timeoutMs: number; base64: string }): Promise<ModerationResult> {
   const client = new InferenceClient(input.apiKey);
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
   try {
-    const bytes = Uint8Array.from(Buffer.from(input.base64, 'base64'));
-    const output = await client.imageClassification({ data: bytes.buffer, model: input.model }, {
-      provider: input.provider === 'auto' ? 'hf-inference' : resolveHuggingFaceProvider(input.provider),
-      signal: controller.signal,
-    });
+    const bytes = Buffer.from(input.base64, 'base64');
+    const data = new Uint8Array(bytes).slice().buffer;
+    const output = await client.imageClassification({
+      data,
+      model: input.model,
+      provider: input.provider === 'auto' ? 'auto' : resolveHuggingFaceProvider(input.provider),
+    }, { signal: controller.signal });
     const entries = Array.isArray(output) ? output : [];
     const nsfw = entries.find(item => item.label.toLowerCase() === 'nsfw')?.score ?? 0;
     const normal = entries.find(item => item.label.toLowerCase() === 'normal')?.score ?? 0;
