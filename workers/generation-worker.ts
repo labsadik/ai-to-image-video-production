@@ -7,6 +7,7 @@ import { optimizeImage } from '@/lib/image/optimizer';
 import { applyWatermark } from '@/lib/image/watermark';
 import { buildProvenance, embedProvenance, type ProvenanceRecord } from '@/lib/image/provenance';
 import type { ProviderResult, ReferenceImage } from '@/core/ai';
+import { processVideoAdJob } from './video-ad-worker';
 
 interface QueueMessage { job_id: string }
 const MAX_ATTEMPTS = 3;
@@ -71,6 +72,8 @@ export async function processGenerationJob(jobId: string) {
 
   let creditsFinalized = false;
   try {
+    if (job.operation === 'generateVideoAd') return await processVideoAdJob({ ...job, status: 'processing' });
+
     const request = job.request as Record<string, unknown>;
     const planId = String(request.plan ?? 'free');
     const route = job.operation === 'editImage'
@@ -178,16 +181,7 @@ export async function processGenerationJob(jobId: string) {
     }).select('id').single();
     if (assetError || !asset) throw new Error(assetError?.message ?? 'Failed to persist generated asset');
 
-    const { error: outputsError } = await admin.from('generation_outputs').upsert({
-      job_id: job.id,
-      asset_id: asset.id,
-      variant: 'master',
-      storage_path: path,
-      mime_type: image.mimeType,
-      width: image.width,
-      height: image.height,
-      byte_size: image.byteSize,
-    }, { onConflict: 'job_id,variant' });
+    const { error: outputsError } = await admin.from('generation_outputs').upsert({ job_id: job.id, asset_id: asset.id, variant: 'master', storage_path: path, mime_type: image.mimeType, width: image.width, height: image.height, byte_size: image.byteSize }, { onConflict: 'job_id,variant' });
     if (outputsError) throw new Error(`Failed to persist output: ${outputsError.message}`);
 
     const { error: finalizeError } = await admin.rpc('finalize_generation_credits', { p_user_id: job.user_id, p_amount: job.reserved_credits, p_idempotency_key: job.idempotency_key });
