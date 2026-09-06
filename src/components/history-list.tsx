@@ -21,9 +21,34 @@ const statusIcon = { succeeded: CheckCircle2, failed: AlertTriangle, queued: Clo
 export function HistoryList({ initialItems }: { initialItems: HistoryItem[] }) {
   const [items, setItems] = useState(initialItems);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  async function download(id: string) {
+    setDownloading(id);
+    try {
+      const response = await fetch(`/api/history/${id}/download`, { cache: 'no-store' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error || 'Download failed.');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `solamentis-${id}.webp`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Download failed.');
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   async function remove(id: string) {
-    if (!window.confirm('Permanently delete this generation, its saved image files, and generation history? This cannot be undone.')) return;
+    if (!window.confirm('Permanently delete this generation, its saved image, and history? This cannot be undone.')) return;
     setDeleting(id);
     try {
       const response = await fetch(`/api/history/${id}`, { method: 'DELETE' });
@@ -43,8 +68,8 @@ export function HistoryList({ initialItems }: { initialItems: HistoryItem[] }) {
       const ready = item.status === 'succeeded';
       return <article key={item.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
         <Link href={`/dashboard/create?history=${item.id}`} className="block">
-          <div className="aspect-video bg-slate-100 p-3">
-            {item.previewUrl ? <img src={item.previewUrl} alt="Generated preview" className="block h-full w-full rounded-2xl object-contain" /> : <div className="grid h-full place-items-center rounded-2xl border border-dashed border-slate-300"><Icon className={`size-8 ${item.status === 'processing' ? 'animate-spin' : ''} text-slate-400`} /></div>}
+          <div className="aspect-video overflow-hidden bg-slate-100">
+            {item.previewUrl ? <img src={item.previewUrl} alt="Generated visual" className="block h-full w-full object-cover" /> : <div className="grid h-full place-items-center border-b border-dashed border-slate-300"><Icon className={`size-8 ${item.status === 'processing' ? 'animate-spin' : ''} text-slate-400`} /></div>}
           </div>
           <div className="p-5">
             <div className="flex items-center justify-between gap-3">
@@ -58,8 +83,8 @@ export function HistoryList({ initialItems }: { initialItems: HistoryItem[] }) {
         <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3">
           <Link href={`/dashboard/create?history=${item.id}`} className="text-xs font-semibold text-slate-700 hover:text-slate-950">Open in Studio</Link>
           <div className="flex items-center gap-1">
-            {ready && <a href={`/api/history/${item.id}/download?variant=editor`} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label="Download image"><Download className="size-4" /></a>}
-            <button type="button" disabled={deleting === item.id} onClick={() => void remove(item.id)} className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50" aria-label="Delete history item"><Trash2 className="size-4" /></button>
+            {ready && <button type="button" disabled={downloading === item.id} onClick={() => void download(item.id)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50" aria-label="Download image">{downloading === item.id ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}</button>}
+            <button type="button" disabled={deleting === item.id} onClick={() => void remove(item.id)} className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50" aria-label="Delete history item">{deleting === item.id ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}</button>
           </div>
         </div>
       </article>;
