@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "worker": "tsx scripts/generation-worker.ts",
+    "cleanup:legacy-images": "tsx scripts/cleanup-legacy-generation-storage.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
