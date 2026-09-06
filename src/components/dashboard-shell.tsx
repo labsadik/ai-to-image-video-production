@@ -2,12 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, CreditCard, FolderKanban, History, ImagePlus, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, Sparkles, Video, X } from 'lucide-react';
+import { Bell, CreditCard, FolderKanban, History, LogOut, Menu, Settings, ShieldCheck, Sparkles, Video, X, LayoutDashboard } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 const baseNav = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-  { href: '/dashboard/create', label: 'Create', icon: ImagePlus },
   { href: '/dashboard/media', label: 'Media Studio', icon: Video },
   { href: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
   { href: '/dashboard/history', label: 'History', icon: History },
