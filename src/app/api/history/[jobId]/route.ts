@@ -57,7 +57,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
       admin.from('generation_outputs').select('storage_path').eq('job_id', job.id),
       admin.from('job_failures').select('id').eq('job_id', job.id),
       admin.from('safety_events').select('id').eq('job_id', job.id),
-      admin.from('assets').select('id,storage_path').eq('project_id', job.project_id ?? '00000000-0000-0000-0000-000000000000').eq('user_id', user.id).eq('metadata->>job_id', job.id),
+      admin.from('assets').select('id,storage_path').eq('user_id', user.id).eq('metadata->>job_id', job.id),
     ]);
     if (outputsError) throw new Error(`History outputs lookup failed: ${outputsError.message}`);
     if (failuresError) throw new Error(`History failure lookup failed: ${failuresError.message}`);
