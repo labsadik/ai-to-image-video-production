@@ -40,31 +40,46 @@ export async function POST(request: Request) {
     const rate = await consumeRateLimit(`user:${user.id}:billing-checkout`, 10, 60);
     if (!rate.allowed) return NextResponse.json({ error: 'Too many checkout attempts', retryAfterSeconds: rate.retryAfterSeconds }, { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } });
 
-    const body = await request.json() as { kind?: 'plan' | 'addon'; planId?: unknown; period?: unknown; requestId?: unknown };
-    const kind = body.kind ?? 'addon';
+    const body = await request.json() as { kind?: 'plan' | 'credit_pack' | 'addon'; planId?: unknown; period?: unknown; productId?: unknown; requestId?: unknown };
+    const kind = body.kind ?? 'credit_pack';
     const admin = getSupabaseAdmin();
     const { data: profile, error: profileError } = await admin.from('profiles').select('plan_id,billing_country_code,country_code,email').eq('id', user.id).single();
     if (profileError || !profile) return NextResponse.json({ error: 'Account configuration unavailable' }, { status: 409 });
     const base = appUrl(request);
     const email = profile.email || user.email;
     const requestId = typeof body.requestId === 'string' && body.requestId.length >= 8 ? body.requestId : crypto.randomUUID();
+    const country = String(profile.billing_country_code || profile.country_code || 'IN').toUpperCase();
 
-    if (kind === 'addon') {
-      const { data: product, error } = await admin.from('credit_products').select('id,display_name,credits,unit_amount_minor,currency,active').eq('id', 'addon_50_usd').single();
-      if (error || !product || !product.active) return NextResponse.json({ error: 'Credit top-up is temporarily unavailable' }, { status: 503 });
+    if (kind === 'credit_pack' || kind === 'addon') {
+      const productId = typeof body.productId === 'string' ? body.productId.trim() : '';
+      if (!productId) return NextResponse.json({ error: 'Select a credit pack first' }, { status: 400 });
+      const { data: product, error: productError } = await admin.from('credit_products').select('id,display_name,credits,active').eq('id', productId).single();
+      if (productError || !product || !product.active) return NextResponse.json({ error: 'Credit pack is unavailable' }, { status: 503 });
+      const { data: price, error: priceError } = await admin.from('credit_product_prices').select('country_code,currency,unit_amount_minor,active').eq('product_id', product.id).eq('country_code', country).eq('active', true).maybeSingle();
+      if (priceError || !price || Number(price.unit_amount_minor) <= 0) return NextResponse.json({ error: 'Credit pricing is not configured for your billing country' }, { status: 503 });
+
       const params: Record<string, string> = {
         mode: 'payment',
-        'line_items[0][price_data][currency]': product.currency.toLowerCase(),
+        'line_items[0][price_data][currency]': String(price.currency).toLowerCase(),
         'line_items[0][price_data][product_data][name]': product.display_name,
         'line_items[0][price_data][product_data][description]': `${product.credits} Solamentis credits. Purchased credits never expire.`,
-        'line_items[0][price_data][unit_amount]': String(product.unit_amount_minor),
+        'line_items[0][price_data][unit_amount]': String(price.unit_amount_minor),
         'line_items[0][quantity]': '1',
-        success_url: `${base}/dashboard/billing?checkout=success&kind=addon`, cancel_url: `${base}/dashboard/billing?checkout=cancelled`,
-        client_reference_id: user.id, customer_creation: 'always', billing_address_collection: 'auto',
-        'metadata[user_id]': user.id, 'metadata[purchase_kind]': 'addon', 'metadata[product_id]': product.id, 'metadata[credits]': String(product.credits),
+        success_url: `${base}/dashboard/billing?checkout=success&kind=credit_pack`,
+        cancel_url: `${base}/dashboard/billing?checkout=cancelled`,
+        client_reference_id: user.id,
+        customer_creation: 'always',
+        billing_address_collection: 'auto',
+        'metadata[user_id]': user.id,
+        'metadata[purchase_kind]': 'credit_pack',
+        'metadata[product_id]': product.id,
+        'metadata[country_code]': country,
+        'metadata[currency]': String(price.currency).toUpperCase(),
+        'metadata[amount_minor]': String(price.unit_amount_minor),
+        'metadata[credits]': String(product.credits),
       };
       if (email) params.customer_email = email;
-      const url = await createStripeCheckout(params, `solamentis:addon:${user.id}:${requestId}`);
+      const url = await createStripeCheckout(params, `solamentis:credit-pack:${user.id}:${product.id}:${country}:${requestId}`);
       return NextResponse.json({ url });
     }
 
@@ -72,7 +87,6 @@ export async function POST(request: Request) {
     if (body.planId === 'free') return NextResponse.json({ error: 'The Free plan does not require checkout' }, { status: 400 });
     if (!isBillingPeriod(body.period)) return NextResponse.json({ error: 'Invalid billing period' }, { status: 400 });
 
-    const country = profile.billing_country_code || profile.country_code || 'IN';
     const { data: price, error: priceError } = await admin.from('plan_prices').select('plan_id,country_code,currency,unit_amount_minor,interval,stripe_price_id,active').eq('plan_id', body.planId).eq('country_code', country).eq('interval', 'month').eq('active', true).maybeSingle();
     if (priceError || !price || price.unit_amount_minor <= 0) return NextResponse.json({ error: 'Regional plan pricing is not configured' }, { status: 503 });
 
