@@ -36,29 +36,49 @@ export async function POST(request: Request) {
 
     const bytes = Buffer.from(await file.arrayBuffer());
     const base64 = bytes.toString('base64');
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
     const idempotencyKey = `image-analysis:${randomUUID()}`;
     const credits = imageAnalysisCredits(plan, level);
+    const analysis = await analyzeImageWithOpenRouter({ base64, mimeType: file.type, level });
+    const analysisJobRequest = {
+      plan,
+      operation: 'analyzeImage',
+      analysisLevel: level,
+      analysisProvider: analysis.provider,
+      analysisModel: analysis.model,
+      analysisResult: analysis.result,
+      imageSha256: sha256,
+      originalMimeType: file.type,
+      originalByteSize: file.size,
+      safetyApplied: false,
+    };
+
+    const { data: job, error: jobError } = await admin.from('generation_jobs').insert({
+      user_id: user.id,
+      status: 'queued',
+      operation: 'analyzeImage',
+      prompt: `Image authenticity analysis · ${level}`,
+      size: `${file.size} bytes`,
+      quality: 'preview',
+      provider: analysis.provider,
+      model: analysis.model,
+      reserved_credits: 0,
+      idempotency_key: idempotencyKey,
+      request: analysisJobRequest,
+    }).select('id').single();
+    if (jobError || !job) throw new Error(jobError?.message ?? 'Unable to save analysis history');
+
     const { data: reserved, error: reserveError } = await admin.rpc('reserve_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: idempotencyKey });
     if (reserveError) throw new Error(`Credit reservation failed: ${reserveError.message}`);
     if (!reserved) return NextResponse.json({ error: 'Insufficient credits' }, { status: 402 });
 
     try {
-      const started = Date.now();
-      const analysis = await analyzeImageWithOpenRouter({ base64, mimeType: file.type, level });
-      const sha256 = createHash('sha256').update(bytes).digest('hex');
       const { error: finalizeError } = await admin.rpc('finalize_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: idempotencyKey });
       if (finalizeError) throw new Error(`Credit finalization failed: ${finalizeError.message}`);
-      return NextResponse.json({
-        provider: analysis.provider,
-        model: analysis.model,
-        level,
-        credits,
-        latencyMs: Date.now() - started,
-        imageSha256: sha256,
-        safetyApplied: false,
-        result: analysis.result,
-      });
+      await admin.from('generation_jobs').update({ status: 'succeeded', started_at: new Date().toISOString(), completed_at: new Date().toISOString(), request: analysisJobRequest }).eq('id', job.id);
+      return NextResponse.json({ jobId: job.id, provider: analysis.provider, model: analysis.model, level, credits, imageSha256: sha256, safetyApplied: false, result: analysis.result });
     } catch (error) {
+      await admin.from('generation_jobs').update({ status: 'failed', error_code: 'IMAGE_ANALYSIS_FAILED', error_message: error instanceof Error ? error.message : 'Image analysis failed', completed_at: new Date().toISOString() }).eq('id', job.id);
       await admin.rpc('refund_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: `${idempotencyKey}:refund` });
       throw error;
     }
