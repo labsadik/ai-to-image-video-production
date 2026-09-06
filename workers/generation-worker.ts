@@ -106,7 +106,7 @@ export async function processGenerationJob(jobId: string) {
       base64: result.base64,
       userId: job.user_id,
       jobId: job.id,
-      stage: 'post_generation_image_moderation',
+      stage: 'generation',
     });
 
     if (moderation.decision !== 'allow') {
