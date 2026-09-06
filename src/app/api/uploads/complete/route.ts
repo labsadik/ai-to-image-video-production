@@ -5,12 +5,14 @@ import { getSupabaseServerClient } from '@/server/supabase';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { consumeRateLimit } from '@/server/rate-limit';
 import { moderateImage } from '@/server/image-moderation';
+import { createMediaPreview } from '@/lib/media/preview';
 
 export const runtime = 'nodejs';
 const MAX_BYTES = 25 * 1024 * 1024;
 const MAX_PIXELS = 60_000_000;
 
 export async function POST(request: Request) {
+  const cleanupPaths: string[] = [];
   try {
     const supabase = await getSupabaseServerClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -55,6 +57,10 @@ export async function POST(request: Request) {
     });
     const status = moderation.decision === 'allow' ? 'ready' : moderation.decision === 'review' ? 'review' : 'blocked';
 
+    const uploadPreview = status === 'ready' ? await createMediaPreview(buffer) : null;
+    const previewPath = `${asset.storage_path}.preview.webp`;
+    if (uploadPreview) cleanupPaths.push(previewPath);
+
     const { data: updated, error: updateError } = await admin.from('assets').update({
       status,
       byte_size: buffer.byteLength,
@@ -69,6 +75,11 @@ export async function POST(request: Request) {
         moderation_decision: moderation.decision,
         moderation_provider: moderation.provider,
         moderation_model: moderation.model,
+        storage_variant: 'master',
+        preview_storage_path: uploadPreview ? previewPath : null,
+        preview_byte_size: uploadPreview?.byteSize ?? null,
+        preview_width: uploadPreview?.width ?? null,
+        preview_height: uploadPreview?.height ?? null,
       },
     }).eq('id', asset.id).select('*').single();
     if (updateError || !updated) return NextResponse.json({ error: updateError?.message ?? 'Unable to finalize asset' }, { status: 500 });
@@ -80,9 +91,49 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Image requires safety review', asset: updated, decision: moderation.decision, reasons: moderation.reasons }, { status: 409 });
     }
 
-    return NextResponse.json({ asset: updated, decision: moderation.decision });
+    const { error: previewUploadError } = await admin.storage.from('solamentis-assets').upload(previewPath, uploadPreview!.buffer, { contentType: uploadPreview!.mimeType, cacheControl: '31536000, immutable', upsert: true });
+    if (previewUploadError) throw new Error(`Upload preview storage failed: ${previewUploadError.message}`);
+
+    const { data: previewAsset, error: previewAssetError } = await admin.from('assets').insert({
+      user_id: user.id,
+      project_id: asset.project_id ?? null,
+      kind: 'preview',
+      storage_path: previewPath,
+      mime_type: uploadPreview!.mimeType,
+      byte_size: uploadPreview!.byteSize,
+      width: uploadPreview!.width,
+      height: uploadPreview!.height,
+      status: 'ready',
+      metadata: {
+        source_asset_id: asset.id,
+        source_storage_path: asset.storage_path,
+        source_byte_size: buffer.byteLength,
+        role: 'upload_preview',
+        storage_variant: 'preview',
+      },
+    }).select('*').single();
+    if (previewAssetError || !previewAsset) throw new Error(previewAssetError?.message ?? 'Unable to save upload preview asset');
+
+    const { data: signedPreview } = await admin.storage.from('solamentis-assets').createSignedUrl(previewPath, 3600);
+    return NextResponse.json({
+      asset: updated,
+      preview: {
+        assetId: previewAsset.id,
+        storage_path: previewPath,
+        mime_type: uploadPreview!.mimeType,
+        byte_size: uploadPreview!.byteSize,
+        width: uploadPreview!.width,
+        height: uploadPreview!.height,
+        url: signedPreview?.signedUrl ?? null,
+      },
+      original: { byte_size: buffer.byteLength, mime_type: mimeType, width: metadata.width, height: metadata.height },
+      decision: moderation.decision,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Upload finalization failed';
+    if (cleanupPaths.length) {
+      try { await getSupabaseAdmin().storage.from('solamentis-assets').remove(cleanupPaths); } catch { /* cleanup is best-effort */ }
+    }
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
