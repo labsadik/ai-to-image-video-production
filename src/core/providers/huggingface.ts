@@ -1,36 +1,9 @@
 import { InferenceClient } from '@huggingface/inference';
 import type { GenerationRequest, ProviderAdapter, ProviderResult } from '@/core/ai';
 
-type HuggingFaceProvider =
-  | 'auto'
-  | 'baseten'
-  | 'cerebras'
-  | 'cohere'
-  | 'deepinfra'
-  | 'fal-ai'
-  | 'featherless-ai'
-  | 'fireworks-ai'
-  | 'groq'
-  | 'hf-inference'
-  | 'novita'
-  | 'nscale'
-  | 'openai'
-  | 'ovhcloud'
-  | 'publicai'
-  | 'replicate'
-  | 'sambanova'
-  | 'scaleway'
-  | 'together'
-  | 'zai-org';
-
 export interface HuggingFaceImageProviderConfig {
   provider: string;
   timeoutMs: number;
-}
-
-function resolveProvider(provider: string): HuggingFaceProvider | undefined {
-  if (provider === 'auto') return undefined;
-  return provider as HuggingFaceProvider;
 }
 
 export class HuggingFaceImageProviderAdapter implements ProviderAdapter {
@@ -45,6 +18,8 @@ export class HuggingFaceImageProviderAdapter implements ProviderAdapter {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
     try {
+      // The configured Hugging Face Inference Providers policy is intentionally left to the
+      // account/router so changing providers remains configuration-only in Solamentis.
       const image = await client.textToImage({
         model: request.model,
         inputs: request.prompt,
@@ -52,10 +27,7 @@ export class HuggingFaceImageProviderAdapter implements ProviderAdapter {
           width: request.width,
           height: request.height,
         },
-      }, {
-        provider: resolveProvider(this.config.provider),
-        signal: controller.signal,
-      });
+      }, { signal: controller.signal }) as Blob;
 
       const buffer = Buffer.from(await image.arrayBuffer());
       const mimeType = image.type || 'image/png';
@@ -80,7 +52,6 @@ export class HuggingFaceImageProviderAdapter implements ProviderAdapter {
     try {
       const client = new InferenceClient(apiKey);
       await client.textToImage({ model, inputs: 'simple abstract test image' }, {
-        provider: resolveProvider(this.config.provider),
         signal: AbortSignal.timeout(Math.min(this.config.timeoutMs, 15000)),
       });
       return { ok: true, latencyMs: Date.now() - started };
