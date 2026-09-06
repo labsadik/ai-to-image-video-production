@@ -5,6 +5,7 @@ import { getSupabaseServerClient } from '@/server/supabase';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { consumeRateLimit } from '@/server/rate-limit';
 import { analyzeImageWithOpenRouter } from '@/core/providers/openrouter';
+import { createMediaPreview } from '@/lib/media/preview';
 import { canUseImageAnalysis, imageAnalysisCredits, type ImageAnalysisLevel } from '@/config/media-features';
 
 export const runtime = 'nodejs';
@@ -81,23 +82,23 @@ export async function POST(request: Request) {
       // Dimension metadata is optional; the original bytes and checksum remain authoritative.
     }
 
-    const preview = await sharp(bytes, { animated: false }).rotate().resize({ width: 1400, withoutEnlargement: true }).webp({ quality: 76, effort: 4 }).toBuffer();
-    const previewInfo = await sharp(preview).metadata();
+    const preview = await createMediaPreview(bytes);
+    const previewInfo = { width: preview.width, height: preview.height };
     const originalPath = `${user.id}/analysis/${id}/original.${extension(file.type)}`;
     const previewPath = `${user.id}/analysis/${id}/preview.webp`;
     storagePaths.push(originalPath, previewPath);
 
     const { error: originalUploadError } = await admin.storage.from('solamentis-assets').upload(originalPath, bytes, { contentType: file.type, cacheControl: '31536000', upsert: false });
     if (originalUploadError) throw new Error(`Original image storage failed: ${originalUploadError.message}`);
-    const { error: previewUploadError } = await admin.storage.from('solamentis-assets').upload(previewPath, preview, { contentType: 'image/webp', cacheControl: '31536000', upsert: false });
+    const { error: previewUploadError } = await admin.storage.from('solamentis-assets').upload(previewPath, preview.buffer, { contentType: preview.mimeType, cacheControl: '31536000', upsert: false });
     if (previewUploadError) throw new Error(`Preview image storage failed: ${previewUploadError.message}`);
 
     const analysisJobRequest = {
       plan, operation: 'analyzeImage', analysisLevel: level, analysisProvider: analysis.provider, analysisModel: analysis.model,
       analysisResult: analysis.result, imageSha256: sha256, originalMimeType: file.type, originalByteSize: bytes.byteLength,
-      previewMimeType: 'image/webp', previewByteSize: preview.byteLength, originalStoragePath: originalPath, previewStoragePath: previewPath,
+      previewMimeType: preview.mimeType, previewByteSize: preview.byteSize, originalStoragePath: originalPath, previewStoragePath: previewPath,
       width, height, previewWidth: previewInfo.width ?? width, previewHeight: previewInfo.height ?? height,
-      latencyMs: Date.now() - started, safetyApplied: false, storageRole: 'original + compressed_preview',
+      previewMaxWidth: 640, previewQuality: 60, latencyMs: Date.now() - started, safetyApplied: false, storageRole: 'original + compressed_preview',
     };
 
     const { data: job, error: jobError } = await admin.from('generation_jobs').insert({
@@ -108,17 +109,18 @@ export async function POST(request: Request) {
     if (jobError || !job) throw new Error(jobError?.message ?? 'Unable to save analysis history');
 
     const assetRows = [
-      { user_id: user.id, kind: 'upload', storage_path: originalPath, mime_type: file.type, byte_size: bytes.byteLength, width, height, checksum: sha256, status: 'ready', metadata: { job_id: id, role: 'analysis_original', analysis_level: level } },
-      { user_id: user.id, kind: 'preview', storage_path: previewPath, mime_type: 'image/webp', byte_size: preview.byteLength, width: previewInfo.width ?? width, height: previewInfo.height ?? height, checksum: createHash('sha256').update(preview).digest('hex'), status: 'ready', metadata: { job_id: id, role: 'analysis_preview', analysis_level: level, source_byte_size: bytes.byteLength } },
+      { user_id: user.id, kind: 'upload', storage_path: originalPath, mime_type: file.type, byte_size: bytes.byteLength, width, height, checksum: sha256, status: 'ready', metadata: { job_id: id, role: 'analysis_original', storage_variant: 'master', analysis_level: level, preview_storage_path: previewPath, preview_byte_size: preview.byteSize } },
+      { user_id: user.id, kind: 'preview', storage_path: previewPath, mime_type: preview.mimeType, byte_size: preview.byteSize, width: preview.width, height: preview.height, checksum: createHash('sha256').update(preview.buffer).digest('hex'), status: 'ready', metadata: { job_id: id, role: 'analysis_preview', storage_variant: 'preview', analysis_level: level, source_storage_path: originalPath, source_byte_size: bytes.byteLength } },
     ];
     const { data: assets, error: assetsError } = await admin.from('assets').insert(assetRows).select('id,storage_path,mime_type,byte_size,width,height');
     if (assetsError || !assets || assets.length !== 2) throw new Error(assetsError?.message ?? 'Unable to save analysis assets');
     const originalAsset = assets.find(asset => asset.storage_path === originalPath);
-    if (!originalAsset) throw new Error('Saved analysis original asset is unavailable');
+    const previewAsset = assets.find(asset => asset.storage_path === previewPath);
+    if (!originalAsset || !previewAsset) throw new Error('Saved analysis assets are unavailable');
 
     const { error: outputError } = await admin.from('generation_outputs').insert([
       { job_id: id, asset_id: originalAsset.id, variant: 'master', storage_path: originalPath, mime_type: file.type, width, height, byte_size: bytes.byteLength },
-      { job_id: id, asset_id: assets.find(asset => asset.storage_path === previewPath)?.id ?? null, variant: 'preview', storage_path: previewPath, mime_type: 'image/webp', width: previewInfo.width ?? width, height: previewInfo.height ?? height, byte_size: preview.byteLength },
+      { job_id: id, asset_id: previewAsset.id, variant: 'preview', storage_path: previewPath, mime_type: preview.mimeType, width: preview.width, height: preview.height, byte_size: preview.byteSize },
     ]);
     if (outputError) throw new Error(`Unable to save analysis outputs: ${outputError.message}`);
 
@@ -138,7 +140,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       jobId: id, provider: analysis.provider, model: analysis.model, level, credits, imageSha256: sha256, safetyApplied: false, result: analysis.result,
       output: { variant: 'master', storage_path: originalPath, mime_type: file.type, width, height, byte_size: bytes.byteLength, url: masterUrl?.signedUrl ?? null },
-      preview: { variant: 'preview', storage_path: previewPath, mime_type: 'image/webp', width: previewInfo.width ?? width, height: previewInfo.height ?? height, byte_size: preview.byteLength, url: previewUrl?.signedUrl ?? null },
+      preview: { variant: 'preview', storage_path: previewPath, mime_type: preview.mimeType, width: preview.width ?? width, height: preview.height ?? height, byte_size: preview.byteSize, url: previewUrl?.signedUrl ?? null },
     });
   } catch (error) {
     if (admin && storagePaths.length) {
