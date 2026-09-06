@@ -131,33 +131,69 @@ export async function processGenerationJob(jobId: string) {
     let outputBuffer = outputBufferBeforeModeration;
     const watermarkText = Boolean(request.watermark) ? await resolveProjectName(job.user_id, job.project_id) : null;
     if (watermarkText) outputBuffer = await applyWatermark(outputBuffer, watermarkText);
-    let variants = await optimizeImage(outputBuffer, { width: Number(request.width ?? 1024), height: Number(request.height ?? 1024), maxBytes: Number(request.maxExportBytes ?? 8_000_000) });
+
+    let image = await optimizeImage(outputBuffer, {
+      width: Number(request.width ?? 1024),
+      height: Number(request.height ?? 1024),
+      maxBytes: Number(request.maxExportBytes ?? 8_000_000),
+    });
 
     let provenance: ProvenanceRecord | null = null;
     if (planId !== 'free') {
       provenance = buildProvenance({ site: 'Solamentis', projectName: await resolveProjectName(job.user_id, job.project_id), jobId: job.id, provider: actualProvider, model: actualModel, createdAt: new Date().toISOString() });
-      variants = await Promise.all(variants.map(async variant => {
-        const buffer = await embedProvenance(variant.buffer, provenance!);
-        return { ...variant, buffer, byteSize: buffer.byteLength };
-      }));
+      const buffer = await embedProvenance(image.buffer, provenance);
+      image = { ...image, buffer, byteSize: buffer.byteLength };
     }
 
     const base = `${job.user_id}/jobs/${job.id}`;
-    for (const variant of variants) {
-      const path = `${base}/${variant.variant}.webp`;
-      const { error } = await admin.storage.from('solamentis-assets').upload(path, variant.buffer, { contentType: variant.mimeType, upsert: true, cacheControl: variant.variant === 'preview' ? '86400' : '31536000' });
-      if (error) throw new Error(`Storage upload failed: ${error.message}`);
-    }
+    const path = `${base}/master.webp`;
+    const { error: uploadError } = await admin.storage.from('solamentis-assets').upload(path, image.buffer, { contentType: image.mimeType, upsert: true, cacheControl: '31536000, immutable' });
+    if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
 
-    const exportVariant = variants.find(v => v.variant === 'export');
-    const { data: asset, error: assetError } = await admin.from('assets').insert({ user_id: job.user_id, project_id: job.project_id ?? null, kind: 'generated', storage_path: `${base}/export.webp`, mime_type: 'image/webp', byte_size: exportVariant?.byteSize ?? outputBuffer.byteLength, width: Number(request.width ?? 1024), height: Number(request.height ?? 1024), status: 'ready', metadata: { job_id: job.id, provider: actualProvider, model: actualModel, primary_provider: job.provider, primary_model: job.model, external_id: result.externalId, moderation_decision: moderation.decision, moderation_provider: moderation.provider, moderation_model: moderation.model, moderation_reasons: moderation.reasons, watermark_text: watermarkText, provenance, variants: variants.map(v => ({ variant: v.variant, path: `${base}/${v.variant}.webp`, bytes: v.byteSize })) } }).select('id').single();
+    const { data: asset, error: assetError } = await admin.from('assets').insert({
+      user_id: job.user_id,
+      project_id: job.project_id ?? null,
+      kind: 'generated',
+      storage_path: path,
+      mime_type: image.mimeType,
+      byte_size: image.byteSize,
+      width: image.width,
+      height: image.height,
+      status: 'ready',
+      metadata: {
+        job_id: job.id,
+        provider: actualProvider,
+        model: actualModel,
+        primary_provider: job.provider,
+        primary_model: job.model,
+        external_id: result.externalId,
+        moderation_decision: moderation.decision,
+        moderation_provider: moderation.provider,
+        moderation_model: moderation.model,
+        moderation_reasons: moderation.reasons,
+        watermark_text: watermarkText,
+        provenance,
+        storage_variant: 'master',
+      },
+    }).select('id').single();
     if (assetError || !asset) throw new Error(assetError?.message ?? 'Failed to persist generated asset');
-    const { error: outputsError } = await admin.from('generation_outputs').upsert(variants.map(v => ({ job_id: job.id, asset_id: asset.id, variant: v.variant, storage_path: `${base}/${v.variant}.webp`, mime_type: v.mimeType, width: v.width, height: v.height, byte_size: v.byteSize })), { onConflict: 'job_id,variant' });
-    if (outputsError) throw new Error(`Failed to persist outputs: ${outputsError.message}`);
+
+    const { error: outputsError } = await admin.from('generation_outputs').upsert({
+      job_id: job.id,
+      asset_id: asset.id,
+      variant: 'master',
+      storage_path: path,
+      mime_type: image.mimeType,
+      width: image.width,
+      height: image.height,
+      byte_size: image.byteSize,
+    }, { onConflict: 'job_id,variant' });
+    if (outputsError) throw new Error(`Failed to persist output: ${outputsError.message}`);
+
     const { error: finalizeError } = await admin.rpc('finalize_generation_credits', { p_user_id: job.user_id, p_amount: job.reserved_credits, p_idempotency_key: job.idempotency_key });
     if (finalizeError) throw new Error(`Credit finalization failed: ${finalizeError.message}`);
     creditsFinalized = true;
-    const { data: completed, error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', output_path: `${base}/export.webp`, external_job_id: result.externalId, completed_at: new Date().toISOString(), request: { ...(request ?? {}), actualProvider, actualModel, moderationDecision: moderation.decision } }).eq('id', job.id).select('*').single();
+    const { data: completed, error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', output_path: path, external_job_id: result.externalId, completed_at: new Date().toISOString(), request: { ...(request ?? {}), actualProvider, actualModel, moderationDecision: moderation.decision } }).eq('id', job.id).select('*').single();
     if (completeError) throw new Error(`Job completion failed: ${completeError.message}`);
     return completed ?? job;
   } catch (error) {
