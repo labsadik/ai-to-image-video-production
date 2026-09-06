@@ -1,5 +1,3 @@
-import 'server-only';
-
 import { getProviderAdapter } from '@/core/provider-registry';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { getProviderSecret } from '@/server/provider-secrets';
