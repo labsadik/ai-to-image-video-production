@@ -1,6 +1,184 @@
 import { redirect } from 'next/navigation';
-import { Activity, Bot, CreditCard, ShieldCheck, Users } from 'lucide-react';
+import { Activity, Bot, CreditCard, ShieldCheck, Users, type LucideIcon } from 'lucide-react';
 import { getSupabaseServerClient } from '@/server/supabase';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 
-export default async function AdminPage(){const client=await getSupabaseServerClient();const {data:{user}}=await client.auth.getUser();if(!user)redirect('/login');const admin=getSupabaseAdmin();const {data:me}=await admin.from('profiles').select('role,full_name,email').eq('id',user.id).single();if(me?.role!=='admin')redirect('/dashboard');const [{data:users},{data:providers},{data:routes},{data:plans},{data:policy}]=await Promise.all([admin.from('profiles').select('id,full_name,email,phone,country_name,country_code,plan_id,role,credits,created_at,last_seen_at,login_count').order('created_at',{ascending:false}).limit(100),admin.from('ai_providers').select('id,display_name,enabled,protocol,health_status,health_latency_ms,health_checked_at').order('display_name'),admin.from('ai_plan_routes').select('plan_id,quality,provider_id,model_id,enabled,fallback_provider_id,fallback_model_id').order('plan_id'),admin.from('plans').select('id,monthly_price_cents,monthly_credits,max_uploads_per_project,watermark').order('monthly_price_cents'),admin.from('safety_policies').select('version,status,moderation_provider_id,moderation_model_id').eq('status','active').maybeSingle()]);return <div className="space-y-8"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-400">Administration</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">Solamentis control plane</h1><p className="mt-2 text-sm text-slate-500">Provider, model, pricing, safety, and customer configuration are read directly from Supabase.</p></div><section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[[Users,'Users',users?.length??0],[Bot,'Providers',providers?.length??0],[CreditCard,'Plans',plans?.length??0],[ShieldCheck,'Safety policy',policy?`v${policy.version}`:'Missing']].map(([Icon,label,value])=><div key={label as string} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="grid size-9 place-items-center rounded-xl bg-slate-100"><Icon className="size-4"/></div><p className="mt-5 text-sm text-slate-500">{label as string}</p><p className="mt-1 text-2xl font-semibold">{String(value)}</p></div>)}</section><section className="rounded-3xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 px-6 py-5"><h2 className="text-sm font-semibold">Customers</h2><p className="mt-1 text-xs text-slate-400">Identity, regional profile data, plan, credits, and recent activity.</p></div><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-400"><tr><th className="px-6 py-3">User</th><th className="px-6 py-3">Country</th><th className="px-6 py-3">Plan</th><th className="px-6 py-3">Credits</th><th className="px-6 py-3">Activity</th></tr></thead><tbody className="divide-y divide-slate-100">{users?.map(u=><tr key={u.id}><td className="px-6 py-4"><p className="text-sm font-medium">{u.full_name||'Unnamed user'}</p><p className="mt-1 text-xs text-slate-400">{u.email||'—'} · {u.phone||'No phone'}</p></td><td className="px-6 py-4 text-xs text-slate-600">{u.country_name||u.country_code||'—'}</td><td className="px-6 py-4 text-xs font-semibold capitalize">{u.plan_id||'free'}{u.role==='admin'&&<span className="ml-2 rounded-full bg-slate-100 px-2 py-1 text-[10px]">ADMIN</span>}</td><td className="px-6 py-4 text-xs text-slate-600">{u.credits}</td><td className="px-6 py-4 text-xs text-slate-400">{u.last_seen_at?new Date(u.last_seen_at).toLocaleString():'—'} · {u.login_count||0} logins</td></tr>)}</tbody></table></div></section><section className="grid gap-6 lg:grid-cols-2"><div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center gap-3"><Activity className="size-5"/><div><h2 className="text-sm font-semibold">Provider health</h2><p className="text-xs text-slate-400">Live configuration state.</p></div></div><div className="mt-5 space-y-3">{providers?.map(p=><div key={p.id} className="flex items-center justify-between rounded-2xl bg-slate-50 p-4"><div><p className="text-sm font-semibold">{p.display_name}</p><p className="mt-1 text-xs text-slate-400">{p.protocol} · {p.health_latency_ms?`${p.health_latency_ms} ms`:'—'}</p></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${p.enabled?'bg-emerald-50 text-emerald-700':'bg-slate-200 text-slate-500'}`}>{p.enabled?'Enabled':'Disabled'}</span></div>)}</div></div><div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center gap-3"><Bot className="size-5"/><div><h2 className="text-sm font-semibold">Routing matrix</h2><p className="text-xs text-slate-400">Plan + quality → configured provider/model.</p></div></div><div className="mt-5 grid gap-2">{routes?.map(r=><div key={`${r.plan_id}-${r.quality}`} className="flex items-center justify-between rounded-xl border border-slate-100 p-3"><span className="text-xs font-semibold capitalize">{r.plan_id} · {r.quality}</span><span className="text-xs text-slate-500">{r.provider_id} · {r.enabled?'active':'off'}</span></div>)}</div></div></section></div>}
+export default async function AdminPage() {
+  const client = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await client.auth.getUser();
+
+  if (!user) redirect('/login');
+
+  const admin = getSupabaseAdmin();
+  const { data: me } = await admin
+    .from('profiles')
+    .select('role,full_name,email')
+    .eq('id', user.id)
+    .single();
+
+  if (me?.role !== 'admin') redirect('/dashboard');
+
+  const [{ data: users }, { data: providers }, { data: routes }, { data: plans }, { data: policy }] =
+    await Promise.all([
+      admin
+        .from('profiles')
+        .select(
+          'id,full_name,email,phone,country_name,country_code,plan_id,role,credits,created_at,last_seen_at,login_count',
+        )
+        .order('created_at', { ascending: false })
+        .limit(100),
+      admin
+        .from('ai_providers')
+        .select('id,display_name,enabled,protocol,health_status,health_latency_ms,health_checked_at')
+        .order('display_name'),
+      admin
+        .from('ai_plan_routes')
+        .select('plan_id,quality,provider_id,model_id,enabled,fallback_provider_id,fallback_model_id')
+        .order('plan_id'),
+      admin
+        .from('plans')
+        .select('id,monthly_price_cents,monthly_credits,max_uploads_per_project,watermark')
+        .order('monthly_price_cents'),
+      admin
+        .from('safety_policies')
+        .select('version,status,moderation_provider_id,moderation_model_id')
+        .eq('status', 'active')
+        .maybeSingle(),
+    ]);
+
+  const summaryCards: Array<{
+    icon: LucideIcon;
+    label: string;
+    value: string | number;
+  }> = [
+    { icon: Users, label: 'Users', value: users?.length ?? 0 },
+    { icon: Bot, label: 'Providers', value: providers?.length ?? 0 },
+    { icon: CreditCard, label: 'Plans', value: plans?.length ?? 0 },
+    { icon: ShieldCheck, label: 'Safety policy', value: policy ? `v${policy.version}` : 'Missing' },
+  ];
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-400">Administration</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Solamentis control plane</h1>
+        <p className="mt-2 text-sm text-slate-500">
+          Provider, model, pricing, safety, and customer configuration are read directly from Supabase.
+        </p>
+      </div>
+
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {summaryCards.map(({ icon: Icon, label, value }) => (
+          <div key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="grid size-9 place-items-center rounded-xl bg-slate-100">
+              <Icon className="size-4" />
+            </div>
+            <p className="mt-5 text-sm text-slate-500">{label}</p>
+            <p className="mt-1 text-2xl font-semibold">{String(value)}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-6 py-5">
+          <h2 className="text-sm font-semibold">Customers</h2>
+          <p className="mt-1 text-xs text-slate-400">Identity, regional profile data, plan, credits, and recent activity.</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-left">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-400">
+              <tr>
+                <th className="px-6 py-3">User</th>
+                <th className="px-6 py-3">Country</th>
+                <th className="px-6 py-3">Plan</th>
+                <th className="px-6 py-3">Credits</th>
+                <th className="px-6 py-3">Activity</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {users?.map((u) => (
+                <tr key={u.id}>
+                  <td className="px-6 py-4">
+                    <p className="text-sm font-medium">{u.full_name || 'Unnamed user'}</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {u.email || '—'} · {u.phone || 'No phone'}
+                    </p>
+                  </td>
+                  <td className="px-6 py-4 text-xs text-slate-600">{u.country_name || u.country_code || '—'}</td>
+                  <td className="px-6 py-4 text-xs font-semibold capitalize">
+                    {u.plan_id || 'free'}
+                    {u.role === 'admin' && (
+                      <span className="ml-2 rounded-full bg-slate-100 px-2 py-1 text-[10px]">ADMIN</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-xs text-slate-600">{u.credits}</td>
+                  <td className="px-6 py-4 text-xs text-slate-400">
+                    {u.last_seen_at ? new Date(u.last_seen_at).toLocaleString() : '—'} · {u.login_count || 0} logins
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-2">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-3">
+            <Activity className="size-5" />
+            <div>
+              <h2 className="text-sm font-semibold">Provider health</h2>
+              <p className="text-xs text-slate-400">Live configuration state.</p>
+            </div>
+          </div>
+          <div className="mt-5 space-y-3">
+            {providers?.map((p) => (
+              <div key={p.id} className="flex items-center justify-between rounded-2xl bg-slate-50 p-4">
+                <div>
+                  <p className="text-sm font-semibold">{p.display_name}</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {p.protocol} · {p.health_latency_ms ? `${p.health_latency_ms} ms` : '—'}
+                  </p>
+                </div>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${
+                    p.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-500'
+                  }`}
+                >
+                  {p.enabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-3">
+            <Bot className="size-5" />
+            <div>
+              <h2 className="text-sm font-semibold">Routing matrix</h2>
+              <p className="text-xs text-slate-400">Plan + quality → configured provider/model.</p>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-2">
+            {routes?.map((r) => (
+              <div
+                key={`${r.plan_id}-${r.quality}`}
+                className="flex items-center justify-between rounded-xl border border-slate-100 p-3"
+              >
+                <span className="text-xs font-semibold capitalize">
+                  {r.plan_id} · {r.quality}
+                </span>
+                <span className="text-xs text-slate-500">
+                  {r.provider_id} · {r.enabled ? 'active' : 'off'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
