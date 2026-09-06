@@ -67,10 +67,7 @@ export async function resolveOpenRouterImageModel() {
 export async function resolveOpenRouterVisionModel() {
   const configured = configuredModel('OPENROUTER_ANALYSIS_MODEL');
   if (configured) return configured;
-  const payload = await openRouterFetch('/models?input_modalities=image');
-  const models = Array.isArray((payload as { data?: unknown[] })?.data) ? (payload as { data: VisionModelRecord[] }).data : [];
-  const freePreferred = models.find(model => model.id.endsWith(':free'));
-  return freePreferred?.id ?? models[0]?.id ?? (() => { throw new Error('OpenRouter has no vision model available'); })();
+  return 'openrouter/free';
 }
 
 export async function resolveOpenRouterVideoModel(durationSeconds: number, resolution: '720p' | '1080p') {
