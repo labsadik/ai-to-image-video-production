@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { NavigationProgress } from '@/components/navigation-progress';
 
 export const metadata: Metadata = {
   title: { default: 'Solamentis — AI Creative Studio', template: '%s · Solamentis' },
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}</body></html>;
+  return <html lang="en"><body><NavigationProgress />{children}</body></html>;
 }
