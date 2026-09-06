@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import { CalendarDays, CheckCircle2, Clock3, Save, ShieldCheck, Sparkles, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -26,4 +26,4 @@ export default function SettingsPage(){
    {compare&&<section className="space-y-4"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-slate-400">Plan comparison</p><h2 className="mt-2 text-xl font-semibold">Compare features and period pricing</h2></div><PlanComparison prices={payload?.planPrices??{}} currency={currency} initialPlan={plan.id}/></section>}
  </div>;
 }
-function Detail({icon,label,value}:{icon?:React.ReactNode;label:string;value:string}){return <div className="min-w-0 rounded-2xl border border-slate-200 p-3.5"><div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">{icon}{label}</div><p className="mt-1.5 break-words text-sm font-semibold text-slate-800">{value}</p></div>}
+function Detail({icon,label,value}:{icon?:ReactNode;label:string;value:string}){return <div className="min-w-0 rounded-2xl border border-slate-200 p-3.5"><div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">{icon}{label}</div><p className="mt-1.5 break-words text-sm font-semibold text-slate-800">{value}</p></div>}
