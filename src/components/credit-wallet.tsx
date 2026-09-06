@@ -3,32 +3,38 @@
 import { Coins, Loader2, Sparkles, Wallet } from 'lucide-react';
 import { useState } from 'react';
 
-export function CreditWallet({ monthly, addon }: { monthly: number; addon: number }) {
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
+type CreditPack = {
+  id: string;
+  name: string;
+  credits: number;
+  unitAmountMinor: number;
+};
 
-  async function addCredits() {
-    setLoading(true);
+export function CreditWallet({ monthly, addon, currency, packs }: { monthly: number; addon: number; currency: string; packs: CreditPack[] }) {
+  const [loading, setLoading] = useState('');
+  const [message, setMessage] = useState('');
+  const total = monthly + addon;
+
+  async function buyPack(productId: string) {
+    setLoading(productId);
     setMessage('');
     try {
       const response = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'addon' }),
+        body: JSON.stringify({ kind: 'credit_pack', productId }),
       });
       const data = await response.json() as { url?: string; error?: string };
       if (!response.ok || !data.url) throw new Error(data.error || 'Unable to open secure checkout.');
       window.location.assign(data.url);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to open secure checkout.');
-      setLoading(false);
+      setLoading('');
     }
   }
 
-  const total = monthly + addon;
-
   return <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-    <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-5">
       <div className="flex min-w-0 items-start gap-3">
         <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-slate-950 text-white"><Wallet className="size-5" /></span>
         <div className="min-w-0">
@@ -37,15 +43,24 @@ export function CreditWallet({ monthly, addon }: { monthly: number; addon: numbe
           <p className="mt-1 text-sm leading-5 text-slate-500">Monthly credits renew with your plan. Purchased credits never expire.</p>
         </div>
       </div>
-      <button type="button" onClick={() => void addCredits()} disabled={loading} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
-        {loading ? <Loader2 className="size-4 animate-spin" /> : <Coins className="size-4" />}
-        {loading ? 'Opening checkout…' : 'Add 50 credits · $5'}
-      </button>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl bg-slate-50 p-4"><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400"><Sparkles className="size-3.5" />Monthly</div><p className="mt-2 text-2xl font-semibold text-slate-950">{monthly.toLocaleString()}</p><p className="mt-1 text-xs text-slate-500">Renewing plan balance</p></div>
+        <div className="rounded-2xl bg-slate-50 p-4"><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400"><Coins className="size-3.5" />Purchased</div><p className="mt-2 text-2xl font-semibold text-slate-950">{addon.toLocaleString()}</p><p className="mt-1 text-xs text-slate-500">Never expires</p></div>
+      </div>
+      <div>
+        <div className="flex items-end justify-between gap-3"><div><p className="text-sm font-semibold text-slate-950">Top up credits</p><p className="mt-1 text-xs text-slate-500">Choose the amount that fits your workload. Pricing follows your billing country and local currency.</p></div><span className="text-xs font-semibold text-slate-400">Max 1,299 credits</span></div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {packs.map((pack) => {
+            const isLoading = loading === pack.id;
+            return <button key={pack.id} type="button" onClick={() => void buyPack(pack.id)} disabled={Boolean(loading)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-950 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60">
+              <div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-slate-950">{pack.name}</span>{isLoading&&<Loader2 className="size-4 animate-spin"/>}</div>
+              <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{pack.credits.toLocaleString()}</p>
+              <p className="mt-1 text-xs text-slate-500">credits · {currency} {(pack.unitAmountMinor / 100).toLocaleString()}</p>
+            </button>;
+          })}
+        </div>
+      </div>
     </div>
-    <div className="mt-5 grid gap-3 sm:grid-cols-2">
-      <div className="rounded-2xl bg-slate-50 p-4"><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400"><Sparkles className="size-3.5" />Monthly</div><p className="mt-2 text-2xl font-semibold text-slate-950">{monthly.toLocaleString()}</p><p className="mt-1 text-xs text-slate-500">Renewing plan balance</p></div>
-      <div className="rounded-2xl bg-slate-50 p-4"><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400"><Coins className="size-3.5" />Purchased</div><p className="mt-2 text-2xl font-semibold text-slate-950">{addon.toLocaleString()}</p><p className="mt-1 text-xs text-slate-500">Never expires</p></div>
-    </div>
-    {message && <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700" role="alert">{message}</p>}
+    {message && <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700" role="alert">{message}</p>}
   </section>;
 }
