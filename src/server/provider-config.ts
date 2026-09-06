@@ -1,7 +1,8 @@
 import { getSupabaseAdmin } from './supabase-admin';
 import type { QualityKey } from '@/config/providers';
+import { openRouterRuntimeConfig, resolveOpenRouterImageModel } from '@/core/providers/openrouter';
 
-export type ProviderProtocol = 'google_gemini' | 'openai_images' | 'generic_json' | 'huggingface_image' | 'huggingface_vlm' | 'huggingface_image_classification';
+export type ProviderProtocol = 'google_gemini' | 'openai_images' | 'generic_json' | 'huggingface_image' | 'huggingface_vlm' | 'huggingface_image_classification' | 'openrouter_images';
 
 export interface RuntimeProviderConfig {
   provider: string;
@@ -60,8 +61,15 @@ export async function resolveProviderConfig(providerId: string, modelId: string)
 }
 
 async function resolveEnvSelectedProvider(quality: QualityKey, operation: 'generateImage' | 'editImage' = 'generateImage'): Promise<RuntimeProviderConfig | null> {
-  const selected = process.env.SOLAMENTIS_ACTIVE_PROVIDER?.trim().toLowerCase();
+  const selected = process.env.SOLAMENTIS_ACTIVE_PROVIDER?.trim().toLowerCase()
+    || (process.env.OPENROUTER_API_KEY ? 'openrouter' : '');
   if (!selected) return null;
+
+  if (selected === 'openrouter') {
+    if (operation !== 'generateImage') return null;
+    const model = await resolveOpenRouterImageModel();
+    return openRouterRuntimeConfig(model);
+  }
 
   const admin = getSupabaseAdmin();
   const provider = await getProvider(selected);
