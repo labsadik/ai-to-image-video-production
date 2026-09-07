@@ -17,8 +17,8 @@ async function resolveProjectName(userId: string, projectId?: string | null) {
   return 'SOLAMENTIS';
 }
 
-function videoDimensions(resolution: '720p' | '1080p', aspectRatio: string) {
-  const longEdge = resolution === '1080p' ? 1920 : 1280;
+function videoDimensions(aspectRatio: string) {
+  const longEdge = 1280;
   switch (aspectRatio) {
     case '9:16': return { width: Math.round(longEdge * 9 / 16), height: longEdge };
     case '1:1': return { width: longEdge, height: longEdge };
@@ -30,13 +30,14 @@ export async function processVideoAdJob(job: any) {
   const admin = getSupabaseAdmin();
   const request = (job.request ?? {}) as Record<string, unknown>;
   const durationSeconds = Number(request.durationSeconds ?? 5);
-  const resolution = request.resolution === '1080p' ? '1080p' : '720p';
   const aspectRatio = typeof request.aspectRatio === 'string' ? request.aspectRatio : '16:9';
-  const quality = request.videoQuality === 'high_end' ? 'high_end' : 'standard';
-  const videoQuality = quality as 'standard' | 'high_end';
+  const videoQuality = 'standard' as const;
+  const resolution = '720p' as const;
   const provider = 'fal';
   const model = typeof job.model === 'string' && job.model ? job.model : FAL_VIDEO_MODEL;
   if (model !== FAL_VIDEO_MODEL) throw new Error(`Unsupported Fal video model: ${model}`);
+  if (![5, 10].includes(durationSeconds)) throw new Error('Video duration must be 5 or 10 seconds');
+  if (!['16:9', '9:16', '1:1'].includes(aspectRatio)) throw new Error('Unsupported video aspect ratio');
   const apiKey = await getProviderSecret('fal', 'FAL_KEY');
 
   fal.config({ credentials: apiKey });
@@ -76,7 +77,7 @@ export async function processVideoAdJob(job: any) {
 
   const watermarkText = Boolean(request.watermark) ? await resolveProjectName(job.user_id, job.project_id) : null;
   const processed = await processVideoOutput(downloaded.buffer, { watermarkText, quality: videoQuality });
-  const dimensions = videoDimensions(resolution, aspectRatio);
+  const dimensions = videoDimensions(aspectRatio);
   const preview = await createMediaPreview(frame);
   const base = `${job.user_id}/jobs/${job.id}`;
   const masterPath = `${base}/master.mp4`;
@@ -109,7 +110,7 @@ export async function processVideoAdJob(job: any) {
   const { error: finalizeError } = await admin.rpc('finalize_generation_credits', { p_user_id: job.user_id, p_amount: job.reserved_credits, p_idempotency_key: job.idempotency_key });
   if (finalizeError) throw new Error(`Credit finalization failed: ${finalizeError.message}`);
 
-  const { data: completed, error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', output_path: masterPath, external_job_id: data.video?.url ?? null, completed_at: new Date().toISOString(), request: { ...request, actualProvider: provider, actualModel: model, moderationDecision: moderation.decision, finalByteSize: processed.byteSize, masterByteSize: processed.byteSize, previewByteSize: preview.byteSize, masterStoragePath: masterPath, previewStoragePath: previewPath, audio: false } }).eq('id', job.id).select('*').single();
+  const { data: completed, error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', output_path: masterPath, external_job_id: data.video?.url ?? null, completed_at: new Date().toISOString(), request: { ...request, actualProvider: provider, actualModel: model, moderationDecision: moderation.decision, finalByteSize: processed.byteSize, masterByteSize: processed.byteSize, previewByteSize: preview.byteSize, masterStoragePath: masterPath, previewStoragePath: previewPath, audio: false, videoQuality, resolution } }).eq('id', job.id).select('*').single();
   if (completeError) throw new Error(`Video job completion failed: ${completeError.message}`);
   return completed ?? job;
 }
