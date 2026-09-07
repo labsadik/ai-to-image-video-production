@@ -19,18 +19,18 @@ export type DisplayPlan = {
 };
 
 export const DISPLAY_PLANS: readonly DisplayPlan[] = [
-  { id: 'free', name: 'Free', description: 'Start creating with a small monthly allowance.', monthlyCredits: 5, maxUploadsPerMonth: 2, maxUploadsPerProject: 2, watermark: true, monthlyFallbackMinor: 0, features: ['5 credits / month', 'Basic image generation', 'Basic image analysis · 2 credits', 'Watermark on generated media', 'Private project storage + history', '2 image uploads / month'], icon: Gauge, premium: false },
-  { id: 'pro', name: 'Starter', description: 'For creators who need more generation and analysis capacity.', monthlyCredits: 50, maxUploadsPerMonth: 5, maxUploadsPerProject: 5, watermark: false, monthlyFallbackMinor: 1000, features: ['50 credits / month', 'Basic / Medium / Ultra image generation', 'Basic / Medium / High image analysis', 'Standard 5-second video · 10 credits', 'No visible watermark', '5 image uploads / month'], icon: Sparkles, premium: true },
-  { id: 'business', name: 'Growth', description: 'For teams and production workloads.', monthlyCredits: 100, maxUploadsPerMonth: 20, maxUploadsPerProject: 20, watermark: false, monthlyFallbackMinor: 3000, features: ['100 credits / month', 'Basic / Medium / Ultra image generation', 'Basic / Medium / High image analysis', 'Standard 5-second video · 10 credits', 'No visible watermark', '20 image uploads / month', 'Upcoming features included on 6-month and 1-year billing'], icon: Crown, premium: false },
+  { id: 'free', name: 'Free', description: 'Start creating with a small monthly allowance.', monthlyCredits: 5, maxUploadsPerMonth: 2, maxUploadsPerProject: 2, watermark: true, monthlyFallbackMinor: 0, features: ['5 credits / month', 'Preview image generation', 'Basic image analysis · 2 credits', 'Watermark on generated media', 'Private project storage + history', '2 image uploads / month'], icon: Gauge, premium: false },
+  { id: 'pro', name: 'Starter', description: 'For creators who need more generation and analysis capacity.', monthlyCredits: 50, maxUploadsPerMonth: 5, maxUploadsPerProject: 5, watermark: false, monthlyFallbackMinor: 1000, features: ['50 credits / month', 'Preview / Standard / Premium image generation', 'Basic / Medium / Hard image analysis', 'Standard 5- or 10-second silent video · 10 credits', 'No visible watermark', '5 image uploads / month'], icon: Sparkles, premium: true },
+  { id: 'business', name: 'Growth', description: 'For teams and production workloads.', monthlyCredits: 100, maxUploadsPerMonth: 20, maxUploadsPerProject: 20, watermark: false, monthlyFallbackMinor: 3000, features: ['100 credits / month', 'Preview / Standard / Premium image generation', 'Basic / Medium / Hard image analysis', 'Standard 5- or 10-second silent video · 10 credits', 'No visible watermark', '20 image uploads / month', 'Upcoming features included on 6-month and 1-year billing'], icon: Crown, premium: false },
 ];
 
 export const PLAN_COMPARISON_FEATURES = [
   { label: 'Monthly credits', key: 'monthlyCredits', format: (plan: DisplayPlan) => plan.monthlyCredits.toLocaleString() },
   { label: 'Image uploads / month', key: 'maxUploadsPerMonth', format: (plan: DisplayPlan) => String(plan.maxUploadsPerMonth) },
-  { label: 'Hard uploads / project', key: 'maxUploadsPerProject', format: (plan: DisplayPlan) => String(plan.maxUploadsPerProject) },
-  { label: 'Image generation', key: 'imageGeneration', format: (plan: DisplayPlan) => plan.id === 'free' ? 'Basic' : 'Basic / Medium / Ultra' },
-  { label: 'Image analysis', key: 'imageAnalysis', format: (plan: DisplayPlan) => plan.id === 'free' ? 'Basic' : 'Basic / Medium / High' },
-  { label: '5-second video', key: 'videoAds', format: (plan: DisplayPlan) => plan.id === 'free' ? 'Not included' : '10 credits' },
+  { label: 'Image uploads / project', key: 'maxUploadsPerProject', format: (plan: DisplayPlan) => String(plan.maxUploadsPerProject) },
+  { label: 'Image generation', key: 'imageGeneration', format: (plan: DisplayPlan) => plan.id === 'free' ? 'Preview' : 'Preview / Standard / Premium' },
+  { label: 'Image analysis', key: 'imageAnalysis', format: (plan: DisplayPlan) => plan.id === 'free' ? 'Basic' : 'Basic / Medium / Hard' },
+  { label: 'Silent video', key: 'videoAds', format: (plan: DisplayPlan) => plan.id === 'free' ? 'Not included' : 'Standard · 10 credits' },
   { label: 'Visible watermark', key: 'watermark', format: (plan: DisplayPlan) => plan.watermark ? 'Included' : 'None' },
   { label: 'Private storage + history', key: 'storage', format: () => 'Included' },
   { label: 'Upcoming features', key: 'upcoming', format: (plan: DisplayPlan) => plan.id === 'business' ? 'Growth · 6 months / 1 year only' : 'Not included' },
