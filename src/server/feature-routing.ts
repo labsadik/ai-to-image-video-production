@@ -5,7 +5,7 @@ import { resolveProviderConfig, type RuntimeProviderConfig } from './provider-co
 import type { PublicGenerationQuality } from '@/config/plans';
 
 export type FeatureCategory = 'social_image' | 'text_graphic' | 'image_analysis' | 'video_ad';
-export type FeatureQuality = PublicGenerationQuality | 'hard';
+export type FeatureQuality = PublicGenerationQuality | 'standard' | 'hard';
 
 const qualityMap: Record<'preview' | 'standard' | 'premium', PublicGenerationQuality> = {
   preview: 'basic',
