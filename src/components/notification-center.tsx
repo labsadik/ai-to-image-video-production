@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Bell, Check, CheckCheck, Coins, CreditCard, ImageIcon, ScanSearch, Sparkles, TriangleAlert, Video, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 
 type NotificationRow = { id: string; user_id: string; kind: string; title: string; body: string; severity: 'info' | 'success' | 'warning' | 'critical'; metadata: Record<string, unknown> | null; read_at: string | null; created_at: string };
@@ -27,7 +28,7 @@ export function NotificationCenter() {
     const supabase = getSupabaseBrowserClient();
     const loadUser = async () => { const result = await supabase.auth.getUser() as UserResult; if (mounted) setUserId(result.data.user?.id ?? null); };
     void loadUser();
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => { if (mounted) setUserId(session?.user?.id ?? null); });
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => { if (mounted) setUserId(session?.user?.id ?? null); });
     return () => { mounted = false; authListener.subscription.unsubscribe(); };
   }, []);
 
@@ -55,7 +56,7 @@ export function NotificationCenter() {
           const item = payload.new;
           setNotifications((current) => current.map((existing) => existing.id === item.id ? item : existing));
         });
-      await new Promise<void>((resolve) => { channel.subscribe((status) => { if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') resolve(); }); });
+      await new Promise<void>((resolve) => { channel.subscribe((status: string) => { if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') resolve(); }); });
       return channel;
     };
     let channel: ReturnType<typeof supabase.channel> | null = null;
