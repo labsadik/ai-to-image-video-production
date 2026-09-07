@@ -62,7 +62,7 @@ export async function POST(request: Request) {
         mode: 'payment',
         'line_items[0][price_data][currency]': String(price.currency).toLowerCase(),
         'line_items[0][price_data][product_data][name]': product.display_name,
-        'line_items[0][price_data][product_data][description]': `${product.credits} Solamentis credits. Purchased credits never expire.`,
+        'line_items[0][price_data][product_data][description]': `${product.credits} Solamentis credits. Purchased credits expire 1 year after purchase.`,
         'line_items[0][price_data][unit_amount]': String(price.unit_amount_minor),
         'line_items[0][quantity]': '1',
         success_url: `${base}/dashboard/billing?checkout=success&kind=credit_pack`,
