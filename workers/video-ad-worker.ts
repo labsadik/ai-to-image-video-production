@@ -6,6 +6,22 @@ import { createMediaPreview } from '@/lib/media/preview';
 import { moderateImage } from '@/server/image-moderation';
 import { recordSafetyEvent } from '@/server/safety-events';
 
+const PROVIDER_TIMEOUT_MS = 6 * 60_000;
+
+async function withProviderTimeout<T>(operation: Promise<T>, timeoutMs = PROVIDER_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Fal provider timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function resolveProjectName(userId: string, projectId?: string | null) {
   const admin = getSupabaseAdmin();
   if (projectId) {
@@ -39,7 +55,7 @@ export async function processVideoAdJob(job: any) {
   const apiKey = await getProviderSecret(provider, 'FAL_KEY');
 
   fal.config({ credentials: apiKey });
-  const result = await fal.subscribe(model, {
+  const result = await withProviderTimeout(fal.subscribe(model, {
     input: {
       prompt: job.prompt,
       duration: durationSeconds === 10 ? '10' : '5',
@@ -47,12 +63,12 @@ export async function processVideoAdJob(job: any) {
       generate_audio: false,
     },
     logs: false,
-  });
+  }));
   const data = result.data as { video?: { url?: string; content_type?: string; file_size?: number } };
   const videoUrl = data.video?.url;
   if (!videoUrl) throw new Error('Configured video provider returned no video URL');
 
-  const videoResponse = await fetch(videoUrl);
+  const videoResponse = await withProviderTimeout(fetch(videoUrl), 90_000);
   if (!videoResponse.ok) throw new Error(`Video download failed: HTTP ${videoResponse.status}`);
   const downloaded = {
     buffer: Buffer.from(await videoResponse.arrayBuffer()),
