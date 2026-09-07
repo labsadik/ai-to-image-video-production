@@ -59,6 +59,7 @@ Deno.serve(async (req: Request) => {
         const countryCode = String(object.metadata?.country_code ?? "").toUpperCase();
         const currency = String(object.metadata?.currency ?? object.currency ?? "").toUpperCase();
         const amountMinor = Number(object.amount_total ?? object.metadata?.amount_minor ?? 0);
+        const purchaseAt = epochToIso(object.created) ?? epochToIso(event.created);
         if (userId && productId && countryCode && currency && Number.isSafeInteger(amountMinor) && amountMinor > 0) {
           const { error } = await admin.rpc("grant_credit_product_purchase", {
             p_user_id: userId,
@@ -68,7 +69,7 @@ Deno.serve(async (req: Request) => {
             p_amount_minor: amountMinor,
             p_idempotency_key: `stripe:credit-pack:${String(object.id)}`,
             p_external_reference: String(object.id),
-            p_metadata: { provider: "stripe", checkout_session_id: String(object.id), event_id: eventId },
+            p_metadata: { provider: "stripe", checkout_session_id: String(object.id), event_id: eventId, purchase_at: purchaseAt },
           });
           if (error) throw new Error(`Credit pack grant failed: ${error.message}`);
         }
