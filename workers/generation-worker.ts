@@ -1,7 +1,7 @@
 import { getProviderAdapter } from '@/core/provider-registry';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { getProviderSecret } from '@/server/provider-secrets';
-import { resolveLiveEditProviderModel, resolveLiveProviderModel, resolveProviderConfig } from '@/server/provider-config';
+import { resolveFeatureRoute } from '@/server/feature-routing';
 import { moderateImage } from '@/server/image-moderation';
 import { optimizeImage } from '@/lib/image/optimizer';
 import { createMediaPreview } from '@/lib/media/preview';
@@ -26,7 +26,7 @@ async function markProviderHealth(providerId: string, ok: boolean, latencyMs?: n
   const { data: provider } = await admin.from('ai_providers').select('health_failures').eq('id', providerId).maybeSingle();
   const failures = ok ? 0 : Number(provider?.health_failures ?? 0) + 1;
   await admin.from('ai_providers').update({ health_status: ok ? 'healthy' : 'degraded', health_checked_at: new Date().toISOString(), health_latency_ms: latencyMs ?? null, health_message: message ?? null, health_failures: failures }).eq('id', providerId);
-  await admin.from('provider_health_events').insert({ provider_id: providerId, ok, latency_ms: latencyMs ?? null, message: message ?? null, capabilities: {} });
+  await admin.from('provider_health_events').insert({ provider_id: providerId, ok, latency_ms: latencyMs ?? null, message: message ?? null, capabilities: { image_generation: true } });
 }
 
 async function resolveProjectName(userId: string, projectId?: string | null) {
@@ -74,25 +74,14 @@ export async function processGenerationJob(jobId: string) {
   let creditsFinalized = false;
   try {
     if (job.operation === 'generateVideoAd') return await processVideoAdJob({ ...job, status: 'processing' });
+    if (job.operation !== 'generateImage') throw new Error(`Unsupported generation operation: ${job.operation}`);
 
     const request = job.request as Record<string, unknown>;
     const planId = String(request.plan ?? 'free');
-    const route = job.operation === 'editImage'
-      ? await resolveLiveEditProviderModel(planId, job.quality)
-      : await resolveLiveProviderModel(planId, job.quality);
+    const category = request.category === 'text_graphic' ? 'text_graphic' : 'social_image';
+    const quality = job.quality === 'premium' ? 'ultra' : job.quality === 'standard' ? 'medium' : 'basic';
+    const route = await resolveFeatureRoute(planId, category, quality);
     if (route.provider !== job.provider || route.model !== job.model) throw new Error(`Job route changed after enqueue; refusing stale provider/model ${job.provider}/${job.model}`);
-
-    const fallbackProviderId = 'fallbackProviderId' in route && typeof route.fallbackProviderId === 'string' ? route.fallbackProviderId : undefined;
-    const fallbackModelId = 'fallbackModelId' in route && typeof route.fallbackModelId === 'string' ? route.fallbackModelId : undefined;
-    const candidates = [{ provider: route.provider, model: route.model, config: route }];
-    if (fallbackProviderId && fallbackModelId && (fallbackProviderId !== route.provider || fallbackModelId !== route.model)) {
-      try {
-        const fallbackConfig = await resolveProviderConfig(fallbackProviderId, fallbackModelId);
-        candidates.push({ provider: fallbackConfig.provider, model: fallbackConfig.model, config: fallbackConfig });
-      } catch (fallbackError) {
-        console.warn('Fallback provider configuration unavailable', fallbackError);
-      }
-    }
 
     let result: ProviderResult | null = null;
     let actualProvider = route.provider;
@@ -100,25 +89,32 @@ export async function processGenerationJob(jobId: string) {
     let lastProviderError: unknown = null;
     const referenceImages = await loadReferenceImages(request);
 
-    for (const candidate of candidates) {
-      try {
-        const adapter = getProviderAdapter(candidate.config);
-        const apiKey = await getProviderSecret(candidate.provider, candidate.config.secretEnv);
-        const started = Date.now();
-        const generated = await adapter.generate({ userId: job.user_id, plan: planId as 'free' | 'pro' | 'business', operation: job.operation as 'generateImage' | 'editImage' | 'enhanceImage', prompt: job.prompt, size: job.size, width: Number(request.width ?? 1024), height: Number(request.height ?? 1024), quality: job.quality as 'preview' | 'standard' | 'premium', referenceImages, model: candidate.model, apiKey });
-        await markProviderHealth(candidate.provider, true, Date.now() - started);
-        result = generated;
-        actualProvider = candidate.provider;
-        actualModel = candidate.model;
-        break;
-      } catch (providerError) {
-        lastProviderError = providerError;
-        const retryable = isRetryableProviderError(providerError);
-        if (retryable) await markProviderHealth(candidate.provider, false, undefined, providerError instanceof Error ? providerError.message : 'provider generation failed');
-        if (!retryable) break;
-      }
+    try {
+      const adapter = getProviderAdapter(route);
+      const apiKey = await getProviderSecret(route.provider, route.secretEnv);
+      const started = Date.now();
+      const generated = await adapter.generate({
+        userId: job.user_id,
+        plan: planId as 'free' | 'pro' | 'business',
+        operation: 'generateImage',
+        category,
+        prompt: job.prompt,
+        size: job.size,
+        width: Number(request.width ?? 1024),
+        height: Number(request.height ?? 1024),
+        quality: job.quality as 'preview' | 'standard' | 'premium',
+        referenceImages,
+        model: route.model,
+        apiKey,
+      });
+      await markProviderHealth(route.provider, true, Date.now() - started);
+      result = generated;
+    } catch (providerError) {
+      lastProviderError = providerError;
+      if (isRetryableProviderError(providerError)) await markProviderHealth(route.provider, false, undefined, providerError instanceof Error ? providerError.message : 'provider generation failed');
     }
-    if (!result) throw lastProviderError instanceof Error ? lastProviderError : new Error('All configured AI providers failed');
+
+    if (!result) throw lastProviderError instanceof Error ? lastProviderError : new Error('Configured image provider failed');
 
     const outputBufferBeforeModeration = Buffer.from(result.base64, 'base64');
     const moderation = await moderateImage({ mimeType: result.mimeType || 'image/png', base64: result.base64, userId: job.user_id, jobId: job.id, stage: 'generation' });
@@ -158,54 +154,10 @@ export async function processGenerationJob(jobId: string) {
     const { error: previewUploadError } = await admin.storage.from('solamentis-assets').upload(previewPath, preview.buffer, { contentType: preview.mimeType, upsert: true, cacheControl: '31536000, immutable' });
     if (previewUploadError) throw new Error(`Preview storage upload failed: ${previewUploadError.message}`);
 
-    const { data: masterAsset, error: masterAssetError } = await admin.from('assets').insert({
-      user_id: job.user_id,
-      project_id: job.project_id ?? null,
-      kind: 'generated',
-      storage_path: masterPath,
-      mime_type: image.mimeType,
-      byte_size: image.byteSize,
-      width: image.width,
-      height: image.height,
-      status: 'ready',
-      metadata: {
-        job_id: job.id,
-        provider: actualProvider,
-        model: actualModel,
-        primary_provider: job.provider,
-        primary_model: job.model,
-        external_id: result.externalId,
-        moderation_decision: moderation.decision,
-        moderation_provider: moderation.provider,
-        moderation_model: moderation.model,
-        moderation_reasons: moderation.reasons,
-        watermark_text: watermarkText,
-        provenance,
-        storage_variant: 'master',
-        preview_storage_path: previewPath,
-        preview_byte_size: preview.byteSize,
-      },
-    }).select('id').single();
+    const { data: masterAsset, error: masterAssetError } = await admin.from('assets').insert({ user_id: job.user_id, project_id: job.project_id ?? null, kind: 'generated', storage_path: masterPath, mime_type: image.mimeType, byte_size: image.byteSize, width: image.width, height: image.height, status: 'ready', metadata: { job_id: job.id, provider: actualProvider, model: actualModel, primary_provider: job.provider, primary_model: job.model, external_id: result.externalId, moderation_decision: moderation.decision, moderation_provider: moderation.provider, moderation_model: moderation.model, moderation_reasons: moderation.reasons, watermark_text: watermarkText, provenance, storage_variant: 'master', preview_storage_path: previewPath, preview_byte_size: preview.byteSize } }).select('id').single();
     if (masterAssetError || !masterAsset) throw new Error(masterAssetError?.message ?? 'Failed to persist generated asset');
 
-    const { data: previewAsset, error: previewAssetError } = await admin.from('assets').insert({
-      user_id: job.user_id,
-      project_id: job.project_id ?? null,
-      kind: 'preview',
-      storage_path: previewPath,
-      mime_type: preview.mimeType,
-      byte_size: preview.byteSize,
-      width: preview.width,
-      height: preview.height,
-      status: 'ready',
-      metadata: {
-        job_id: job.id,
-        role: 'generated_preview',
-        storage_variant: 'preview',
-        source_storage_path: masterPath,
-        source_byte_size: image.byteSize,
-      },
-    }).select('id').single();
+    const { data: previewAsset, error: previewAssetError } = await admin.from('assets').insert({ user_id: job.user_id, project_id: job.project_id ?? null, kind: 'preview', storage_path: previewPath, mime_type: preview.mimeType, byte_size: preview.byteSize, width: preview.width, height: preview.height, status: 'ready', metadata: { job_id: job.id, role: 'generated_preview', storage_variant: 'preview', source_storage_path: masterPath, source_byte_size: image.byteSize } }).select('id').single();
     if (previewAssetError || !previewAsset) throw new Error(previewAssetError?.message ?? 'Failed to persist generated preview asset');
 
     const { error: outputsError } = await admin.from('generation_outputs').upsert([
