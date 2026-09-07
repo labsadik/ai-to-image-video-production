@@ -15,7 +15,7 @@ const baseNav = [
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ];
 
-export function DashboardShell({ children, name, email, role, credits, plan, userId }: { children: ReactNode; name: string; email: string; role: string; credits: number; plan: string; userId: string }) {
+export function DashboardShell({ children, name, email, role, credits, plan }: { children: ReactNode; name: string; email: string; role: string; credits: number; plan: string }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const nav = role === 'admin' ? [...baseNav, { href: '/admin', label: 'Admin', icon: ShieldCheck }] : baseNav;
@@ -66,7 +66,7 @@ export function DashboardShell({ children, name, email, role, credits, plan, use
             <div className="ml-auto flex items-center gap-2">
               {pathname === '/dashboard/media' && <MediaUsagePanel />}
               <Link href="/dashboard/billing?focus=credits" aria-label="Add credits" className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-950 px-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"><Plus className="size-4" /><span className="hidden sm:inline">Add credits</span></Link>
-              <NotificationCenter userId={userId} />
+              <NotificationCenter />
               <div className="hidden rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 sm:block">Protected workspace</div>
             </div>
           </div>
