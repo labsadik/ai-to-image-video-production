@@ -4,9 +4,9 @@ export const PROVIDER_CATALOG = {
     secretEnv: 'GOOGLE_AI_API_KEY',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     models: {
-      preview: 'gemini-3.1-flash-image',
+      preview: 'gemini-3.1-flash-lite-image',
       standard: 'gemini-3.1-flash-image',
-      premium: 'gemini-3.1-flash-image',
+      premium: 'gemini-3-pro-image',
     },
   },
   fal: {
@@ -14,38 +14,10 @@ export const PROVIDER_CATALOG = {
     secretEnv: 'FAL_KEY',
     baseUrl: 'https://fal.run',
     models: {
-      preview: 'fal-ai/flux-2-pro',
-      standard: 'fal-ai/flux-2-pro',
-      premium: 'fal-ai/flux-2-pro',
+      preview: 'fal-ai/kling-video/v2.6/pro/text-to-video',
+      standard: 'fal-ai/kling-video/v2.6/pro/text-to-video',
+      premium: 'fal-ai/kling-video/v2.6/pro/text-to-video',
     },
-  },
-  ideogram: {
-    enabled: true,
-    secretEnv: 'IDEOGRAM_API_KEY',
-    baseUrl: 'https://api.ideogram.ai',
-    models: {
-      preview: 'ideogram-4.0',
-      standard: 'ideogram-4.0',
-      premium: 'ideogram-4.0',
-    },
-  },
-  huggingface: {
-    enabled: false,
-    secretEnv: 'HF_TOKEN',
-    baseUrl: 'https://huggingface.co',
-    models: { preview: '', standard: '', premium: '' },
-  },
-  openai: {
-    enabled: false,
-    secretEnv: 'OPENAI_API_KEY',
-    baseUrl: 'https://api.openai.com/v1',
-    models: { preview: '', standard: '', premium: '' },
-  },
-  anthropic: {
-    enabled: false,
-    secretEnv: 'ANTHROPIC_API_KEY',
-    baseUrl: 'https://api.anthropic.com',
-    models: { preview: '', standard: '', premium: '' },
   },
 } as const;
 
