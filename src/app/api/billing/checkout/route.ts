@@ -19,14 +19,14 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const rate = await consumeRateLimit(`user:${user.id}:billing-checkout`, 10, 60);
     if (!rate.allowed) return NextResponse.json({ error: 'Too many checkout attempts', retryAfterSeconds: rate.retryAfterSeconds }, { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } });
-    const body = await request.json() as { kind?: 'plan' | 'credit_pack' | 'addon'; planId?: unknown; period?: unknown; productId?: unknown; requestId?: unknown };
+    const body = await request.json() as { kind?: 'plan' | 'credit_pack'; planId?: unknown; period?: unknown; productId?: unknown; requestId?: unknown };
     const kind = body.kind ?? 'credit_pack';
     const admin = getSupabaseAdmin();
     const { data: profile, error: profileError } = await admin.from('profiles').select('plan_id,billing_country_code,country_code,email').eq('id', user.id).single();
     if (profileError || !profile) return NextResponse.json({ error: 'Account configuration unavailable' }, { status: 409 });
     const base = appUrl(request); const email = profile.email || user.email; const requestId = typeof body.requestId === 'string' && body.requestId.length >= 8 ? body.requestId : crypto.randomUUID(); const country = String(profile.billing_country_code || profile.country_code || 'IN').toUpperCase();
 
-    if (kind === 'credit_pack' || kind === 'addon') {
+    if (kind === 'credit_pack') {
       const productId = typeof body.productId === 'string' ? body.productId.trim() : '';
       if (!productId) return NextResponse.json({ error: 'Select a credit pack first' }, { status: 400 });
       const { data: product, error: productError } = await admin.from('credit_products').select('id,display_name,credits,active').eq('id', productId).single();
