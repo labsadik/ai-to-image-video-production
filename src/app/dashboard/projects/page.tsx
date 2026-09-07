@@ -5,8 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowUpRight, BriefcaseBusiness, Camera, FolderKanban, Image, Layers3, Pencil, Plus, Sparkles, Trash2, Video, WandSparkles, X } from 'lucide-react';
 import { PLATFORM_SPECS, type PlatformId } from '@/config/platforms';
 
-type Project = { id: string; name: string; platform: string; width: number | null; height: number | null; metadata: { color: string; icon: string }; historyCount: number; assetCount: number; created_at: string; updated_at: string };
-type IconKey = Project['metadata']['icon'];
+type IconKey = 'sparkles' | 'image' | 'video' | 'layers' | 'briefcase' | 'camera' | 'wand';
+type Project = { id: string; name: string; platform: string; width: number | null; height: number | null; metadata: { color: string; icon: IconKey }; historyCount: number; assetCount: number; created_at: string; updated_at: string };
 
 const colors = [
   { id: 'violet', label: 'Violet', className: 'bg-violet-500', soft: 'bg-violet-50 text-violet-700 border-violet-200' },
