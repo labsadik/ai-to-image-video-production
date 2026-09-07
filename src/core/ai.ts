@@ -3,7 +3,7 @@ import { PROVIDER_CATALOG, type QualityKey } from '@/config/providers';
 
 export type GenerationQuality = QualityKey;
 export type FeatureCategory = 'social_image' | 'text_graphic';
-export type Operation = 'generateImage' | 'editImage' | 'enhanceImage' | 'detectImage';
+export type Operation = 'generateImage';
 
 export interface ReferenceImage {
   mimeType: string;
@@ -13,7 +13,7 @@ export interface ReferenceImage {
 export interface GenerationRequest {
   userId: string;
   plan: keyof typeof GENERATION_PLANS;
-  operation: Exclude<Operation, 'detectImage'>;
+  operation: Operation;
   category?: FeatureCategory;
   prompt: string;
   size: string;
