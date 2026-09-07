@@ -3,8 +3,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { getSupabaseServerClient } from '@/server/supabase';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
+import { getProviderSecret } from '@/server/provider-secrets';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { analyzeImageWithOpenRouter } from '@/core/providers/openrouter';
+import { resolveFeatureRoute } from '@/server/feature-routing';
+import { analyzeImageWithGoogle } from '@/core/providers/google';
 import { createMediaPreview } from '@/lib/media/preview';
 import { compressImageForStorage, MAX_STORAGE_IMAGE_BYTES } from '@/lib/media/compressed-image';
 import { canUseImageAnalysis, imageAnalysisCredits, type ImageAnalysisLevel } from '@/config/media-features';
@@ -47,6 +49,10 @@ export async function POST(request: Request) {
     const plan = profile.plan_id as 'free' | 'pro' | 'business';
     if (!canUseImageAnalysis(plan, level)) return NextResponse.json({ error: `${level} image analysis is not available on the ${plan} plan` }, { status: 403 });
 
+    const route = await resolveFeatureRoute(plan, 'image_analysis', level === 'basic' ? 'basic' : level === 'medium' ? 'medium' : 'hard');
+    if (route.provider !== 'google' || route.protocol !== 'google_gemini') throw new Error('Image analysis must use the configured Google provider');
+    const apiKey = await getProviderSecret(route.provider, route.secretEnv);
+
     const sourceBytes = Buffer.from(await file.arrayBuffer());
     const stored = await compressImageForStorage(sourceBytes, { maxBytes: MAX_STORAGE_IMAGE_BYTES });
     const storedBytes = stored.buffer;
@@ -62,7 +68,7 @@ export async function POST(request: Request) {
     reserved = true;
 
     const started = Date.now();
-    const analysis = await analyzeImageWithOpenRouter({ base64: storedBytes.toString('base64'), mimeType: stored.mimeType, level });
+    const analysis = await analyzeImageWithGoogle({ base64: storedBytes.toString('base64'), mimeType: stored.mimeType, level, apiKey, model: route.model });
 
     const metadata = await sharp(storedBytes, { animated: false }).metadata();
     const width = metadata.width ?? stored.width;
