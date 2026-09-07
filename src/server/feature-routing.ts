@@ -5,6 +5,7 @@ import { resolveProviderConfig, type RuntimeProviderConfig } from './provider-co
 import type { PublicGenerationQuality } from '@/config/plans';
 
 export type FeatureCategory = 'social_image' | 'text_graphic' | 'image_analysis' | 'video_ad';
+export type FeatureQuality = PublicGenerationQuality | 'hard';
 
 const qualityMap: Record<'preview' | 'standard' | 'premium', PublicGenerationQuality> = {
   preview: 'basic',
@@ -16,7 +17,7 @@ export function publicQualityForRuntime(quality: 'preview' | 'standard' | 'premi
   return qualityMap[quality];
 }
 
-export async function resolveFeatureRoute(planId: string, category: FeatureCategory, quality: PublicGenerationQuality): Promise<RuntimeProviderConfig & { fallbackProviderId?: string; fallbackModelId?: string }> {
+export async function resolveFeatureRoute(planId: string, category: FeatureCategory, quality: FeatureQuality): Promise<RuntimeProviderConfig & { fallbackProviderId?: string; fallbackModelId?: string }> {
   const admin = getSupabaseAdmin();
   const { data: route, error } = await admin
     .from('ai_feature_routes')
