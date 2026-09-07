@@ -6,8 +6,6 @@ import { createMediaPreview } from '@/lib/media/preview';
 import { moderateImage } from '@/server/image-moderation';
 import { recordSafetyEvent } from '@/server/safety-events';
 
-const FAL_VIDEO_MODEL = 'fal-ai/kling-video/v2.6/pro/text-to-video';
-
 async function resolveProjectName(userId: string, projectId?: string | null) {
   const admin = getSupabaseAdmin();
   if (projectId) {
@@ -33,15 +31,15 @@ export async function processVideoAdJob(job: any) {
   const aspectRatio = typeof request.aspectRatio === 'string' ? request.aspectRatio : '16:9';
   const videoQuality = 'standard' as const;
   const resolution = '720p' as const;
-  const provider = 'fal';
-  const model = typeof job.model === 'string' && job.model ? job.model : FAL_VIDEO_MODEL;
-  if (model !== FAL_VIDEO_MODEL) throw new Error(`Unsupported Fal video model: ${model}`);
+  const provider = typeof job.provider === 'string' && job.provider ? job.provider : 'fal';
+  const model = typeof job.model === 'string' ? job.model : '';
+  if (!model) throw new Error('Video job is missing its configured model');
   if (![5, 10].includes(durationSeconds)) throw new Error('Video duration must be 5 or 10 seconds');
   if (!['16:9', '9:16', '1:1'].includes(aspectRatio)) throw new Error('Unsupported video aspect ratio');
-  const apiKey = await getProviderSecret('fal', 'FAL_KEY');
+  const apiKey = await getProviderSecret(provider, 'FAL_KEY');
 
   fal.config({ credentials: apiKey });
-  const result = await fal.subscribe(FAL_VIDEO_MODEL, {
+  const result = await fal.subscribe(model, {
     input: {
       prompt: job.prompt,
       duration: durationSeconds === 10 ? '10' : '5',
@@ -52,10 +50,10 @@ export async function processVideoAdJob(job: any) {
   });
   const data = result.data as { video?: { url?: string; content_type?: string; file_size?: number } };
   const videoUrl = data.video?.url;
-  if (!videoUrl) throw new Error('Fal Kling returned no video URL');
+  if (!videoUrl) throw new Error('Configured video provider returned no video URL');
 
   const videoResponse = await fetch(videoUrl);
-  if (!videoResponse.ok) throw new Error(`Fal video download failed: HTTP ${videoResponse.status}`);
+  if (!videoResponse.ok) throw new Error(`Video download failed: HTTP ${videoResponse.status}`);
   const downloaded = {
     buffer: Buffer.from(await videoResponse.arrayBuffer()),
     mimeType: data.video?.content_type || videoResponse.headers.get('content-type') || 'video/mp4',
@@ -87,24 +85,13 @@ export async function processVideoAdJob(job: any) {
   const { error: previewUploadError } = await admin.storage.from('solamentis-assets').upload(previewPath, preview.buffer, { contentType: preview.mimeType, upsert: true, cacheControl: '31536000, immutable' });
   if (previewUploadError) throw new Error(`Video preview storage upload failed: ${previewUploadError.message}`);
 
-  const { data: masterAsset, error: masterAssetError } = await admin.from('assets').insert({
-    user_id: job.user_id, project_id: job.project_id ?? null, kind: 'generated', storage_path: masterPath,
-    mime_type: processed.mimeType, byte_size: processed.byteSize, width: dimensions.width, height: dimensions.height, status: 'ready',
-    metadata: { job_id: job.id, media_type: 'video', provider, model, external_id: data.video?.url ?? null, duration_seconds: durationSeconds, aspect_ratio: aspectRatio, video_quality: videoQuality, resolution, audio: false, moderation_decision: moderation.decision, moderation_provider: moderation.provider, moderation_model: moderation.model, watermark_text: watermarkText, optimized_byte_size: processed.byteSize, storage_variant: 'master', preview_storage_path: previewPath, preview_byte_size: preview.byteSize },
-  }).select('id').single();
+  const { data: masterAsset, error: masterAssetError } = await admin.from('assets').insert({ user_id: job.user_id, project_id: job.project_id ?? null, kind: 'generated', storage_path: masterPath, mime_type: processed.mimeType, byte_size: processed.byteSize, width: dimensions.width, height: dimensions.height, status: 'ready', metadata: { job_id: job.id, media_type: 'video', provider, model, external_id: data.video?.url ?? null, duration_seconds: durationSeconds, aspect_ratio: aspectRatio, video_quality: videoQuality, resolution, audio: false, moderation_decision: moderation.decision, moderation_provider: moderation.provider, moderation_model: moderation.model, watermark_text: watermarkText, optimized_byte_size: processed.byteSize, storage_variant: 'master', preview_storage_path: previewPath, preview_byte_size: preview.byteSize } }).select('id').single();
   if (masterAssetError || !masterAsset) throw new Error(masterAssetError?.message ?? 'Failed to persist video asset');
 
-  const { data: previewAsset, error: previewAssetError } = await admin.from('assets').insert({
-    user_id: job.user_id, project_id: job.project_id ?? null, kind: 'preview', storage_path: previewPath,
-    mime_type: preview.mimeType, byte_size: preview.byteSize, width: preview.width, height: preview.height, status: 'ready',
-    metadata: { job_id: job.id, role: 'video_preview_poster', storage_variant: 'preview', source_storage_path: masterPath, source_byte_size: processed.byteSize },
-  }).select('id').single();
+  const { data: previewAsset, error: previewAssetError } = await admin.from('assets').insert({ user_id: job.user_id, project_id: job.project_id ?? null, kind: 'preview', storage_path: previewPath, mime_type: preview.mimeType, byte_size: preview.byteSize, width: preview.width, height: preview.height, status: 'ready', metadata: { job_id: job.id, role: 'video_preview_poster', storage_variant: 'preview', source_storage_path: masterPath, source_byte_size: processed.byteSize } }).select('id').single();
   if (previewAssetError || !previewAsset) throw new Error(previewAssetError?.message ?? 'Failed to persist video preview asset');
 
-  const { error: outputError } = await admin.from('generation_outputs').upsert([
-    { job_id: job.id, asset_id: masterAsset.id, variant: 'master', storage_path: masterPath, mime_type: processed.mimeType, width: dimensions.width, height: dimensions.height, byte_size: processed.byteSize },
-    { job_id: job.id, asset_id: previewAsset.id, variant: 'preview', storage_path: previewPath, mime_type: preview.mimeType, width: preview.width, height: preview.height, byte_size: preview.byteSize },
-  ], { onConflict: 'job_id,variant' });
+  const { error: outputError } = await admin.from('generation_outputs').upsert([{ job_id: job.id, asset_id: masterAsset.id, variant: 'master', storage_path: masterPath, mime_type: processed.mimeType, width: dimensions.width, height: dimensions.height, byte_size: processed.byteSize }, { job_id: job.id, asset_id: previewAsset.id, variant: 'preview', storage_path: previewPath, mime_type: preview.mimeType, width: preview.width, height: preview.height, byte_size: preview.byteSize }], { onConflict: 'job_id,variant' });
   if (outputError) throw new Error(`Failed to persist video outputs: ${outputError.message}`);
 
   const { error: finalizeError } = await admin.rpc('finalize_generation_credits', { p_user_id: job.user_id, p_amount: job.reserved_credits, p_idempotency_key: job.idempotency_key });
