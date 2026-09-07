@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Bell, CreditCard, FolderKanban, History, LogOut, Menu, Settings, ShieldCheck, Sparkles, Video, X, LayoutDashboard, Plus } from 'lucide-react';
+import { CreditCard, FolderKanban, History, LogOut, Menu, Settings, ShieldCheck, Sparkles, Video, X, LayoutDashboard, Plus } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { MediaUsagePanel } from '@/components/media-usage-panel';
+import { NotificationCenter } from '@/components/notification-center';
 
 const baseNav = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
@@ -15,7 +15,7 @@ const baseNav = [
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ];
 
-export function DashboardShell({ children, name, email, role, credits, plan }: { children: ReactNode; name: string; email: string; role: string; credits: number; plan: string }) {
+export function DashboardShell({ children, name, email, role, credits, plan, userId }: { children: ReactNode; name: string; email: string; role: string; credits: number; plan: string; userId: string }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const nav = role === 'admin' ? [...baseNav, { href: '/admin', label: 'Admin', icon: ShieldCheck }] : baseNav;
@@ -45,10 +45,10 @@ export function DashboardShell({ children, name, email, role, credits, plan }: {
           </div>
           <div className="mt-auto border-t border-slate-100 p-4">
             <div className="rounded-2xl bg-slate-950 p-4 text-white">
-              <div className="flex items-center justify-between text-xs text-slate-300"><span>{plan.toUpperCase()} PLAN</span><span>{credits} credits</span></div>
+              <div className="flex items-center justify-between text-xs text-slate-300"><span>{plan.toUpperCase()} PLAN</span><span>{credits.toLocaleString()} credits</span></div>
               <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full w-2/3 rounded-full bg-white" /></div>
-              <Link href="/dashboard/billing?focus=credits" onClick={() => setOpen(false)} className="mt-3 inline-flex min-h-9 w-full items-center justify-center gap-2 rounded-xl bg-white px-3 text-xs font-semibold text-slate-950 transition hover:bg-slate-100"><Plus className="size-3.5" />Add 50 credits · $5</Link>
-              <p className="mt-2 text-[11px] text-slate-400">Purchased credits never expire.</p>
+              <Link href="/dashboard/billing?focus=credits" onClick={() => setOpen(false)} className="mt-3 inline-flex min-h-9 w-full items-center justify-center gap-2 rounded-xl bg-white px-3 text-xs font-semibold text-slate-950 transition hover:bg-slate-100"><Plus className="size-3.5" />Add credits</Link>
+              <p className="mt-2 text-[11px] text-slate-400">Purchased credits expire 1 year after purchase.</p>
             </div>
             <div className="mt-4 flex items-center gap-3 rounded-xl p-2">
               <div className="grid size-9 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">{initials}</div>
@@ -66,7 +66,7 @@ export function DashboardShell({ children, name, email, role, credits, plan }: {
             <div className="ml-auto flex items-center gap-2">
               {pathname === '/dashboard/media' && <MediaUsagePanel />}
               <Link href="/dashboard/billing?focus=credits" aria-label="Add credits" className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-950 px-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"><Plus className="size-4" /><span className="hidden sm:inline">Add credits</span></Link>
-              <button aria-label="Notifications" className="grid size-10 place-items-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50"><Bell className="size-4" /></button>
+              <NotificationCenter userId={userId} />
               <div className="hidden rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 sm:block">Protected workspace</div>
             </div>
           </div>
