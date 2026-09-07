@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { CreditCard, FolderKanban, History, LogOut, Menu, Settings, ShieldCheck, Sparkles, Video, X, LayoutDashboard, Plus } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { MediaUsagePanel } from '@/components/media-usage-panel';
@@ -46,7 +47,6 @@ export function DashboardShell({ children, name, email, role, credits, plan }: {
           <div className="mt-auto border-t border-slate-100 p-4">
             <div className="rounded-2xl bg-slate-950 p-4 text-white">
               <div className="flex items-center justify-between text-xs text-slate-300"><span>{plan.toUpperCase()} PLAN</span><span>{credits.toLocaleString()} credits</span></div>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full w-2/3 rounded-full bg-white" /></div>
               <Link href="/dashboard/billing?focus=credits" onClick={() => setOpen(false)} className="mt-3 inline-flex min-h-9 w-full items-center justify-center gap-2 rounded-xl bg-white px-3 text-xs font-semibold text-slate-950 transition hover:bg-slate-100"><Plus className="size-3.5" />Add credits</Link>
               <p className="mt-2 text-[11px] text-slate-400">Purchased credits expire 1 year after purchase.</p>
             </div>
