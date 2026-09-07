@@ -15,6 +15,10 @@
 }
 html[data-workspace-theme="aurora"] { --background:#f1f5ff; --foreground:#101329; --workspace-bg:#f1f5ff; --workspace-fg:#101329; --workspace-muted:#636b83; --workspace-border:#dbe1f2; --workspace-soft:#f6f7ff; --workspace-hover:#e9edff; --workspace-panel:rgba(255,255,255,.9); --workspace-accent:#06b6d4; --workspace-accent-2:#8b5cf6; }
 html[data-workspace-theme="paper"] { --background:#f7f3ee; --foreground:#251f1b; --workspace-bg:#f7f3ee; --workspace-fg:#251f1b; --workspace-muted:#776d64; --workspace-border:#e7ddd2; --workspace-soft:#fbf7f2; --workspace-hover:#f1e9e1; --workspace-panel:rgba(255,255,255,.88); --workspace-accent:#b45309; --workspace-accent-2:#92400e; }
+html[data-workspace-theme="midnight"] { --background:#070b16; --foreground:#e5edf8; --workspace-bg:#070b16; --workspace-fg:#e5edf8; --workspace-muted:#91a0b5; --workspace-border:#1d2a40; --workspace-soft:#0e1625; --workspace-hover:#142038; --workspace-panel:rgba(10,17,31,.84); --workspace-accent:#60a5fa; --workspace-accent-2:#2563eb; }
+html[data-workspace-theme="sakura"] { --background:#fff7fa; --foreground:#2c1721; --workspace-bg:#fff7fa; --workspace-fg:#2c1721; --workspace-muted:#846b77; --workspace-border:#efd8e1; --workspace-soft:#fffafb; --workspace-hover:#faedf2; --workspace-panel:rgba(255,255,255,.9); --workspace-accent:#e879a8; --workspace-accent-2:#c02668; }
+html[data-workspace-theme="solar"] { --background:#fffdf5; --foreground:#2a210d; --workspace-bg:#fffdf5; --workspace-fg:#2a210d; --workspace-muted:#83744f; --workspace-border:#ede2bc; --workspace-soft:#fffbea; --workspace-hover:#f8f0cf; --workspace-panel:rgba(255,255,255,.9); --workspace-accent:#eab308; --workspace-accent-2:#f97316; }
+html[data-workspace-theme="glass"] { --background:#eaf4ff; --foreground:#102033; --workspace-bg:#eaf4ff; --workspace-fg:#102033; --workspace-muted:#64748b; --workspace-border:rgba(255,255,255,.72); --workspace-soft:rgba(255,255,255,.45); --workspace-hover:rgba(255,255,255,.68); --workspace-panel:rgba(255,255,255,.46); --workspace-accent:#38bdf8; --workspace-accent-2:#818cf8; }
 
 * { box-sizing: border-box; }
 html { min-width: 320px; scroll-behavior: smooth; text-rendering: optimizeLegibility; }
@@ -43,6 +47,12 @@ img { display:block; max-width:100%; }
 .field-label { display:block; margin-bottom:.5rem; font-size:.75rem; line-height:1rem; font-weight:600; color:var(--workspace-muted); }
 .field-control { display:block; width:100%; min-height:2.75rem; border:1px solid var(--workspace-border); border-radius:.85rem; background:var(--workspace-soft); padding:.7rem .9rem; font-size:.875rem; line-height:1.25rem; color:var(--workspace-fg); outline:none; }
 .field-control:focus { border-color:var(--workspace-accent); box-shadow:0 0 0 4px color-mix(in srgb,var(--workspace-accent) 10%,transparent); }
+
+html[data-workspace-theme="glass"] .workspace-shell { background:radial-gradient(circle at 10% 0%,rgba(56,189,248,.22),transparent 25%),radial-gradient(circle at 90% 10%,rgba(129,140,248,.18),transparent 24%),linear-gradient(145deg,#eaf4ff,#eef5ff 45%,#e8f2ff); }
+html[data-workspace-theme="glass"] .workspace-sidebar, html[data-workspace-theme="glass"] .workspace-topbar, html[data-workspace-theme="glass"] .workspace-shell > div main > section, html[data-workspace-theme="glass"] .workspace-shell > div main > article { box-shadow:0 24px 80px rgba(65,96,135,.12),inset 0 1px 0 rgba(255,255,255,.78); backdrop-filter:blur(28px) saturate(145%); }
+html[data-workspace-theme="glass"] .workspace-primary { box-shadow:0 12px 30px rgba(56,189,248,.2); }
+html[data-workspace-theme="glass"] .workspace-nav-item, html[data-workspace-theme="glass"] button, html[data-workspace-theme="glass"] a { transition:transform .22s ease, background-color .22s ease, box-shadow .22s ease, opacity .22s ease; }
+html[data-workspace-theme="glass"] .workspace-nav-item:hover, html[data-workspace-theme="glass"] .workspace-shell button:hover { transform:translateY(-1px); }
 
 .bg-grid { background-image:linear-gradient(rgba(15,23,42,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(15,23,42,.045) 1px,transparent 1px); background-size:32px 32px; }
 .soft-shadow { box-shadow:0 18px 55px rgba(15,23,42,.08); }

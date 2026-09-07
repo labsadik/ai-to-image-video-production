@@ -2,15 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { CreditCard, FolderKanban, History, LogOut, Menu, Settings, ShieldCheck, Sparkles, Video, X, LayoutDashboard, Plus, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { CreditCard, FolderKanban, History, LogOut, Menu, Settings, ShieldCheck, Sparkles, X, LayoutDashboard, Plus, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { MediaUsagePanel } from '@/components/media-usage-panel';
 import { NotificationCenter } from '@/components/notification-center';
 import { WorkspaceThemeProvider } from '@/components/workspace-theme';
 
 const baseNav = [
  { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
- { href: '/dashboard/media', label: 'Media Studio', icon: Video },
  { href: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
  { href: '/dashboard/history', label: 'History', icon: History },
  { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
@@ -46,7 +44,7 @@ function WorkspaceShell({ children, name, email, role, credits, plan }: { childr
    </div>
   </aside>
   <div className={`transition-[padding] duration-200 ${collapsed ? 'lg:pl-[76px]' : 'lg:pl-[260px]'}`}>
-   <header className="workspace-topbar sticky top-0 z-30 border-b backdrop-blur-xl"><div className="mx-auto flex min-h-16 max-w-[1500px] items-center gap-3 px-4 sm:px-6 lg:px-8"><button aria-label="Open menu" className="grid size-10 place-items-center rounded-xl border border-[var(--workspace-border)] text-[var(--workspace-muted)] lg:hidden" onClick={() => setOpen(true)}><Menu className="size-5" /></button><button type="button" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setCollapsed((value) => !value)} className="hidden size-10 place-items-center rounded-xl border border-[var(--workspace-border)] text-[var(--workspace-muted)] hover:bg-[var(--workspace-hover)] lg:grid" title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>{collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}</button><div className="hidden min-w-0 lg:block"><p className="text-[11px] font-medium uppercase tracking-wider text-[var(--workspace-muted)]">Workspace</p><p className="truncate text-sm font-semibold">AI creative studio</p></div><div className="ml-auto flex items-center gap-2">{pathname === '/dashboard/media' && <MediaUsagePanel />}<Link href="/dashboard/billing?focus=credits" aria-label="Add credits" className="workspace-primary inline-flex min-h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold shadow-sm transition"><Plus className="size-4" /><span className="hidden sm:inline">Add credits</span></Link><NotificationCenter /><div className="hidden rounded-xl border border-[var(--workspace-border)] bg-[var(--workspace-soft)] px-3 py-2 text-xs font-medium text-[var(--workspace-muted)] sm:block">Protected workspace</div></div></div></header>
+   <header className="workspace-topbar sticky top-0 z-30 border-b backdrop-blur-xl"><div className="mx-auto flex min-h-16 max-w-[1500px] items-center gap-3 px-4 sm:px-6 lg:px-8"><button aria-label="Open menu" className="grid size-10 place-items-center rounded-xl border border-[var(--workspace-border)] text-[var(--workspace-muted)] lg:hidden" onClick={() => setOpen(true)}><Menu className="size-5" /></button><button type="button" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setCollapsed((value) => !value)} className="hidden size-10 place-items-center rounded-xl border border-[var(--workspace-border)] text-[var(--workspace-muted)] hover:bg-[var(--workspace-hover)] lg:grid" title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>{collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}</button><div className="hidden min-w-0 lg:block"><p className="text-[11px] font-medium uppercase tracking-wider text-[var(--workspace-muted)]">Workspace</p><p className="truncate text-sm font-semibold">AI creative studio</p></div><div className="ml-auto flex items-center gap-2"><Link href="/dashboard/billing?focus=credits" aria-label="Add credits" className="workspace-primary inline-flex min-h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold shadow-sm transition"><Plus className="size-4" /><span className="hidden sm:inline">Add credits</span></Link><NotificationCenter /><div className="hidden rounded-xl border border-[var(--workspace-border)] bg-[var(--workspace-soft)] px-3 py-2 text-xs font-medium text-[var(--workspace-muted)] sm:block">Protected workspace</div></div></div></header>
    <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8 motion-enter">{children}</main>
   </div>
  </div>;
