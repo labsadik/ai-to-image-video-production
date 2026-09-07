@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const url = Deno.env.get("SUPABASE_URL")!;
-const key = Deno.env.get("SUPABASE_SECRET_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const key = Deno.env.get("SUPABASE_SECRET_KEY");
 const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
 
 async function digestHex(value: string) { const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)); return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join(""); }
@@ -33,18 +33,10 @@ Deno.serve(async (req: Request) => {
           await saveBillingTransaction(admin, { user_id: userId, provider: "stripe", kind: "credit_pack", status: "paid", product_id: productId, description: `${object.metadata?.credits ?? "Credit"} credits`, amount_minor: amountMinor, currency, country_code: countryCode, stripe_checkout_session_id: String(object.id), stripe_payment_intent_id: object.payment_intent ?? null, stripe_customer_id: object.customer ?? null, external_event_id: eventId, purchased_at: purchaseAt ?? new Date().toISOString(), metadata: { credits: Number(object.metadata?.credits ?? 0), provider_event: eventType } });
         }
       }
-      if (object.mode === "payment" && object.payment_status === "paid" && object.metadata?.purchase_kind === "addon") {
-        const credits = Number(object.metadata?.credits ?? 0);
-        if (userId && Number.isInteger(credits) && credits > 0) {
-          const { error } = await admin.rpc("grant_addon_credits", { p_user_id: userId, p_amount: credits, p_idempotency_key: `stripe:addon:${String(object.id)}`, p_external_reference: String(object.id), p_metadata: { provider: "stripe", checkout_session_id: String(object.id), event_id: eventId, product_id: object.metadata?.product_id ?? null } }); if (error) throw new Error(`Credit grant failed: ${error.message}`);
-          await saveBillingTransaction(admin, { user_id: userId, provider: "stripe", kind: "addon", status: "paid", product_id: object.metadata?.product_id ?? null, description: `${credits} add-on credits`, amount_minor: Number(object.amount_total ?? 0), currency: String(object.currency ?? "USD").toUpperCase(), stripe_checkout_session_id: String(object.id), stripe_payment_intent_id: object.payment_intent ?? null, stripe_customer_id: object.customer ?? null, external_event_id: eventId, purchased_at: epochToIso(object.created) ?? new Date().toISOString(), metadata: { credits, provider_event: eventType } });
-        }
-      }
       if (object.mode === "subscription" && userId && planId) {
         const billingPeriod = String(object.metadata?.billing_period ?? object.subscription_data?.metadata?.billing_period ?? "1");
         const { error: subError } = await admin.from("subscriptions").upsert({ user_id: userId, plan_id: planId, status: "active", provider: "stripe", external_customer_id: object.customer ?? null, external_subscription_id: object.subscription ?? null, external_checkout_session_id: String(object.id), metadata: { country_code: object.metadata?.country_code ?? null, billing_period: billingPeriod } }, { onConflict: "user_id" });
         if (subError) throw new Error(`Subscription record failed: ${subError.message}`);
-        // Do not activate a plan from Checkout Session timestamps; Stripe's subscription event carries the authoritative period.
       }
     }
     if (eventType === "customer.subscription.created" || eventType === "customer.subscription.updated") {
