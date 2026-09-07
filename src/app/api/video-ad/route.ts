@@ -11,7 +11,7 @@ import { canUseVideoAd, videoAdCredits, VIDEO_AD_LIMITS, type VideoAdQuality } f
 
 export const runtime = 'nodejs';
 const safety = new PolicySafetyEngine();
-const qualities = new Set<VideoAdQuality>(['standard', 'high_end']);
+const QUALITY: VideoAdQuality = 'standard';
 const ratios = new Set(['16:9', '9:16', '1:1']);
 const FAL_VIDEO_MODEL = 'fal-ai/kling-video/v2.6/pro/text-to-video';
 
@@ -26,17 +26,16 @@ export async function POST(request: Request) {
     const body = await request.json() as Record<string, unknown>;
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     const duration = Number(body.durationSeconds ?? 5);
-    const quality = String(body.quality ?? 'standard') as VideoAdQuality;
     const aspectRatio = String(body.aspectRatio ?? '16:9');
     if (prompt.length < 3 || prompt.length > 8000) return NextResponse.json({ error: 'Prompt must be between 3 and 8000 characters' }, { status: 400 });
-    if (!Number.isInteger(duration) || ![5, 10].includes(duration)) return NextResponse.json({ error: 'Duration must be 5 or 10 seconds' }, { status: 400 });
-    if (!qualities.has(quality) || !ratios.has(aspectRatio)) return NextResponse.json({ error: 'Invalid video quality or aspect ratio' }, { status: 400 });
+    if (!Number.isInteger(duration) || ![VIDEO_AD_LIMITS.minDurationSeconds, VIDEO_AD_LIMITS.maxDurationSeconds].includes(duration)) return NextResponse.json({ error: 'Duration must be 5 or 10 seconds' }, { status: 400 });
+    if (!ratios.has(aspectRatio)) return NextResponse.json({ error: 'Invalid video aspect ratio' }, { status: 400 });
 
     const admin = getSupabaseAdmin();
     const { data: profile, error: profileError } = await admin.from('profiles').select('plan_id').eq('id', user.id).single();
     if (profileError || !profile || !['free', 'pro', 'business'].includes(profile.plan_id)) return NextResponse.json({ error: 'Account configuration unavailable' }, { status: 409 });
     const plan = profile.plan_id as 'free' | 'pro' | 'business';
-    if (!canUseVideoAd(plan, quality)) return NextResponse.json({ error: `${quality} video generation is not available on the ${plan} plan` }, { status: 403 });
+    if (!canUseVideoAd(plan, QUALITY)) return NextResponse.json({ error: `Video generation is not available on the ${plan} plan` }, { status: 403 });
 
     const safetyResult = await safety.check({ prompt, assetUrls: [] });
     const policyVersion = await getActiveSafetyPolicyVersion();
@@ -46,12 +45,12 @@ export async function POST(request: Request) {
       throw new SafetyPolicyViolation(safetyResult);
     }
 
-    const route = await resolveFeatureRoute(plan, 'video_ad', 'standard');
+    const route = await resolveFeatureRoute(plan, 'video_generation', QUALITY === 'standard' ? 'standard' : 'standard');
     if (route.provider !== 'fal' || route.protocol !== 'fal_video' || route.model !== FAL_VIDEO_MODEL) throw new Error('Video generation must use the configured Fal Kling video model');
     await getProviderSecret(route.provider, route.secretEnv);
 
-    const credits = videoAdCredits(plan, quality);
-    const resolution = quality === 'high_end' ? '1080p' : '720p';
+    const credits = videoAdCredits(plan, QUALITY);
+    const resolution = '720p';
     const idempotencyKey = `video-ad:${randomUUID()}`;
     const { data: job, error: insertError } = await admin.from('generation_jobs').insert({
       user_id: user.id,
@@ -60,14 +59,14 @@ export async function POST(request: Request) {
       operation: 'generateVideoAd',
       prompt,
       size: aspectRatio,
-      quality: quality === 'high_end' ? 'premium' : 'standard',
+      quality: 'standard',
       provider: route.provider,
       model: route.model,
       reserved_credits: 0,
       idempotency_key: idempotencyKey,
       request: {
         plan, operation: 'generateVideoAd', prompt, durationSeconds: duration, aspectRatio,
-        videoQuality: quality, resolution, generateAudio: false, watermark: plan === 'free',
+        videoQuality: QUALITY, resolution, generateAudio: false, watermark: plan === 'free',
         safetyPolicyVersion: policyVersion, safetyApplied: true, videoProvider: route.provider,
       },
     }).select('*').single();
@@ -82,7 +81,7 @@ export async function POST(request: Request) {
       if (attachError || !reservedJob) throw new Error(attachError?.message ?? 'Unable to attach reserved credits');
       const { error: queueError } = await admin.rpc('enqueue_generation_job', { p_job_id: job.id });
       if (queueError) throw new Error(`Queue enqueue failed: ${queueError.message}`);
-      return NextResponse.json({ jobId: job.id, status: 'queued', provider: route.provider, model: route.model, durationSeconds: duration, quality, credits, safetyApplied: true });
+      return NextResponse.json({ jobId: job.id, status: 'queued', provider: route.provider, model: route.model, durationSeconds: duration, quality: QUALITY, credits, safetyApplied: true });
     } catch (error) {
       await admin.from('generation_jobs').update({ status: 'failed', error_code: 'VIDEO_REQUEST_FAILED', error_message: error instanceof Error ? error.message : 'Video request failed', completed_at: new Date().toISOString() }).eq('id', job.id);
       await admin.rpc('refund_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: idempotencyKey });
