@@ -18,6 +18,109 @@ function imageSize(quality: GenerationRequest['quality']): '1K' | '2K' | '4K' {
   return '1K';
 }
 
+function parseJsonObject(text: string): Record<string, unknown> {
+  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  try {
+    const parsed = JSON.parse(cleaned) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  } catch {
+    // Fall through to balanced-object extraction.
+  }
+  const start = cleaned.indexOf('{');
+  if (start < 0) throw new Error('Google image-analysis model returned invalid JSON');
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < cleaned.length; index += 1) {
+    const char = cleaned[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') quoted = false;
+      continue;
+    }
+    if (char === '"') { quoted = true; continue; }
+    if (char === '{') depth += 1;
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        const parsed = JSON.parse(cleaned.slice(start, index + 1)) as unknown;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+        break;
+      }
+    }
+  }
+  throw new Error('Google image-analysis model returned invalid JSON');
+}
+
+function number01(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(0, 20) : [];
+}
+
+export type ImageAuthenticityResult = {
+  classification: 'ai_generated' | 'edited_or_composited' | 'likely_real' | 'inconclusive';
+  ai_generated_probability: number;
+  edited_probability: number;
+  real_probability: number;
+  inconclusive_probability: number;
+  confidence: number;
+  evidence: string[];
+  possible_editing_tools: string[];
+  limitations: string[];
+};
+
+function normalizeAuthenticityResult(value: Record<string, unknown>): ImageAuthenticityResult {
+  const classificationValue = value.classification;
+  const classification = classificationValue === 'ai_generated' || classificationValue === 'edited_or_composited' || classificationValue === 'likely_real' || classificationValue === 'inconclusive'
+    ? classificationValue
+    : 'inconclusive';
+  return {
+    classification,
+    ai_generated_probability: number01(value.ai_generated_probability),
+    edited_probability: number01(value.edited_probability),
+    real_probability: number01(value.real_probability),
+    inconclusive_probability: number01(value.inconclusive_probability),
+    confidence: number01(value.confidence),
+    evidence: stringArray(value.evidence),
+    possible_editing_tools: stringArray(value.possible_editing_tools),
+    limitations: stringArray(value.limitations),
+  };
+}
+
+export async function analyzeImageWithGoogle(input: { apiKey: string; model: string; base64: string; mimeType: string; level: 'basic' | 'medium' | 'hard' }) {
+  const ai = new GoogleGenAI({ apiKey: input.apiKey });
+  const depth = input.level === 'basic' ? 'basic' : input.level === 'medium' ? 'medium' : 'deep forensic';
+  const instruction = [
+    'You are Solamentis Image Authenticity Analyzer.',
+    'Analyze the supplied image for likely AI generation, digital manipulation, compositing, camera-original characteristics, visible provenance clues, and visual artifacts.',
+    'This is forensic analysis, not moderation. Never claim certainty.',
+    'Return ONLY JSON with exactly these keys: classification, ai_generated_probability, edited_probability, real_probability, inconclusive_probability, confidence, evidence, possible_editing_tools, limitations.',
+    'classification must be one of ai_generated, edited_or_composited, likely_real, inconclusive.',
+    'The four probability values and confidence must be numbers from 0 to 1.',
+    'The four probability values should sum approximately to 1.0.',
+    'evidence, possible_editing_tools, and limitations must be concise string arrays.',
+    `Analysis depth: ${depth}.`,
+  ].join('\n');
+
+  const response = await ai.models.generateContent({
+    model: input.model,
+    contents: [{
+      role: 'user',
+      parts: [
+        { text: instruction },
+        { inlineData: { mimeType: input.mimeType, data: input.base64 } },
+      ],
+    }],
+  });
+  const text = response.text?.trim() ?? '';
+  if (!text) throw new Error('Google image-analysis model returned no result');
+  return { provider: 'google', model: input.model, result: normalizeAuthenticityResult(parseJsonObject(text)) };
+}
+
 export class GoogleGeminiAdapter implements ProviderAdapter {
   provider: ProviderName = 'google';
 
