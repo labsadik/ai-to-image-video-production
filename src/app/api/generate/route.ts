@@ -6,16 +6,19 @@ import { consumeRateLimit } from '@/server/rate-limit';
 import { GENERATION_PLANS, normalizeGenerationQuality, type PublicGenerationQuality } from '@/config/plans';
 import { PLATFORM_SPECS, type PlatformId } from '@/config/platforms';
 import { SafetyPolicyViolation } from '@/core/safety';
+import { logServerError } from '@/server/production-log';
 import type { GenerationQuality, FeatureCategory } from '@/core/ai';
 
 export const runtime = 'nodejs';
 const category: FeatureCategory = 'image_generation';
 
 export async function POST(request: Request) {
+  let userId = '';
   try {
     const supabase = await getSupabaseServerClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    userId = user.id;
 
     const rate = await consumeRateLimit(`user:${user.id}:generation`, 20, 60);
     if (!rate.allowed) return NextResponse.json({ error: 'Generation rate limit exceeded', retryAfterSeconds: rate.retryAfterSeconds }, { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } });
@@ -58,6 +61,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ jobId: job.id, status: job.status, provider: job.provider, model: job.model, quality: body.quality as PublicGenerationQuality, credits: job.reserved_credits });
   } catch (error) {
     if (error instanceof SafetyPolicyViolation) return NextResponse.json({ error: 'Generation blocked by safety policy', decision: error.decision, reasons: error.reasons, policyVersion: error.policyVersion }, { status: error.decision === 'block' ? 422 : 409 });
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Generation request failed' }, { status: 400 });
+    logServerError('generate.image_failed', error, { userId });
+    const message = error instanceof Error ? error.message : 'Generation request failed';
+    const status = message === 'Insufficient credits' ? 402 : 400;
+    return NextResponse.json({ error: message }, { status });
   }
 }
