@@ -54,7 +54,9 @@ export function NotificationCenter() {
   useEffect(() => {
     let mounted = true;
     const supabase = getSupabaseBrowserClient();
-    void (supabase.auth.getUser() as Promise<UserResult>).then(({ data }) => { if (mounted) setUserId(data.user?.id ?? null); });
+    void (supabase.auth.getUser() as Promise<UserResult>).then((result) => {
+      if (mounted) setUserId(result.data.user?.id ?? null);
+    });
     return () => { mounted = false; };
   }, []);
 
@@ -63,19 +65,31 @@ export function NotificationCenter() {
     let mounted = true;
     const supabase = getSupabaseBrowserClient();
     setLoading(true);
-    void supabase.from('notifications').select('id,user_id,kind,title,body,severity,metadata,read_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(30)
-      .then(({ data }: QueryResult) => { if (mounted) { setNotifications(data ?? []); setLoading(false); } });
+
+    const loadNotifications = async () => {
+      const result = await supabase
+        .from('notifications')
+        .select('id,user_id,kind,title,body,severity,metadata,read_at,created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(30) as unknown as QueryResult;
+      if (mounted) {
+        setNotifications(result.data ?? []);
+        setLoading(false);
+      }
+    };
+    void loadNotifications();
 
     const channel = supabase
       .channel(`user-notifications:${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (payload: RealtimePayload) => {
-        const item = payload.new;
         if (!mounted) return;
+        const item = payload.new;
         setNotifications((current) => [item, ...current.filter((existing) => existing.id !== item.id)].slice(0, 30));
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (payload: RealtimePayload) => {
-        const item = payload.new;
         if (!mounted) return;
+        const item = payload.new;
         setNotifications((current) => current.map((existing) => existing.id === item.id ? item : existing));
       })
       .subscribe();
