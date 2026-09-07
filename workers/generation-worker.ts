@@ -78,7 +78,7 @@ export async function processGenerationJob(jobId: string) {
 
     const request = job.request as Record<string, unknown>;
     const planId = String(request.plan ?? 'free');
-    const category = request.category === 'text_graphic' ? 'text_graphic' : 'social_image';
+    const category = 'image_generation' as const;
     const quality = job.quality === 'premium' ? 'ultra' : job.quality === 'standard' ? 'medium' : 'basic';
     const route = await resolveFeatureRoute(planId, category, quality);
     if (route.provider !== job.provider || route.model !== job.model) throw new Error(`Job route changed after enqueue; refusing stale provider/model ${job.provider}/${job.model}`);
