@@ -19,7 +19,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
   for (const key of allowed) if (key in body) patch[key] = body[key];
   patch.updated_at = new Date().toISOString();
 
-  if (patch.protocol && !['google_gemini', 'openai_images', 'generic_json'].includes(String(patch.protocol))) {
+  if (patch.protocol && !['google_gemini', 'fal_video'].includes(String(patch.protocol))) {
     return NextResponse.json({ error: 'Unsupported provider protocol' }, { status: 400 });
   }
   if (patch.timeout_ms !== undefined && (!Number.isInteger(patch.timeout_ms) || Number(patch.timeout_ms) < 5000 || Number(patch.timeout_ms) > 300000)) {
