@@ -6,6 +6,17 @@ import { PLATFORM_SPECS, type PlatformId } from '@/config/platforms';
 export const runtime = 'nodejs';
 
 const platformIds = new Set<PlatformId>(Object.keys(PLATFORM_SPECS) as PlatformId[]);
+const projectColors = new Set(['slate', 'violet', 'blue', 'cyan', 'emerald', 'amber', 'rose', 'orange']);
+const projectIcons = new Set(['sparkles', 'image', 'video', 'layers', 'briefcase', 'camera', 'wand']);
+
+type ProjectMetadata = { color: string; icon: string };
+
+function normalizeMetadata(value: unknown): ProjectMetadata {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const color = typeof input.color === 'string' && projectColors.has(input.color) ? input.color : 'slate';
+  const icon = typeof input.icon === 'string' && projectIcons.has(input.icon) ? input.icon : 'sparkles';
+  return { color, icon };
+}
 
 function parseProjectDimensions(body: Record<string, unknown>) {
   const requestedPlatform = typeof body.platform === 'string' ? body.platform : 'custom';
@@ -36,7 +47,24 @@ export async function GET() {
   const admin = getSupabaseAdmin();
   const { data, error } = await admin.from('projects').select('id,name,platform,width,height,metadata,created_at,updated_at').eq('user_id', user.id).order('updated_at', { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ projects: data ?? [] });
+  const projects = (data ?? []).map(project => ({ ...project, metadata: normalizeMetadata(project.metadata) }));
+  if (!projects.length) return NextResponse.json({ projects: [] });
+
+  const projectIds = projects.map(project => project.id);
+  const [{ data: jobs, error: jobsError }, { data: assets, error: assetsError }] = await Promise.all([
+    admin.from('generation_jobs').select('project_id').eq('user_id', user.id).in('project_id', projectIds),
+    admin.from('assets').select('project_id').eq('user_id', user.id).in('project_id', projectIds),
+  ]);
+  if (jobsError) return NextResponse.json({ error: jobsError.message }, { status: 500 });
+  if (assetsError) return NextResponse.json({ error: assetsError.message }, { status: 500 });
+
+  return NextResponse.json({
+    projects: projects.map(project => ({
+      ...project,
+      historyCount: (jobs ?? []).filter(job => job.project_id === project.id).length,
+      assetCount: (assets ?? []).filter(asset => asset.project_id === project.id).length,
+    })),
+  });
 }
 
 export async function POST(request: Request) {
@@ -48,11 +76,11 @@ export async function POST(request: Request) {
     const name = typeof body.name === 'string' ? body.name.trim().slice(0, 160) : 'Untitled project';
     const dimensions = parseProjectDimensions(body);
     if (!dimensions.valid) return NextResponse.json({ error: 'Unsupported platform or invalid project dimensions' }, { status: 400 });
-    const metadata = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata) ? body.metadata : {};
+    const metadata = normalizeMetadata(body.metadata);
     const admin = getSupabaseAdmin();
     const { data, error } = await admin.from('projects').insert({ user_id: user.id, name: name || 'Untitled project', platform: dimensions.platform, width: dimensions.width, height: dimensions.height, metadata }).select('*').single();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    return NextResponse.json({ project: data }, { status: 201 });
+    return NextResponse.json({ project: { ...data, metadata: normalizeMetadata(data.metadata), historyCount: 0, assetCount: 0 } }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Project creation failed' }, { status: 400 });
   }
