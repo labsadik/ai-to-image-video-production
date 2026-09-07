@@ -2,7 +2,7 @@ import { GENERATION_PLANS } from '@/config/plans';
 import { PROVIDER_CATALOG, type QualityKey } from '@/config/providers';
 
 export type GenerationQuality = QualityKey;
-export type FeatureCategory = 'social_image' | 'text_graphic';
+export type FeatureCategory = 'image_generation';
 export type Operation = 'generateImage';
 
 export interface ReferenceImage {
