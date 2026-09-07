@@ -29,7 +29,7 @@ export async function planGeneration(request: GenerationRequest & { platform?: P
   if (safetyResult.decision !== 'allow') throw new SafetyPolicyViolation(safetyResult);
 
   const requestedQuality: PublicGenerationQuality = publicQuality(request.quality);
-  const category: FeatureCategory = request.category ?? 'social_image';
+  const category: FeatureCategory = request.category ?? 'image_generation';
   const route = await resolveFeatureRoute(request.plan, category, requestedQuality);
   const plan = GENERATION_PLANS[request.plan];
   const platform = request.platform ? PLATFORM_SPECS[request.platform] : undefined;
