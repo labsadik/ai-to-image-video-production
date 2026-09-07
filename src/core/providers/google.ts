@@ -2,6 +2,22 @@ import { GoogleGenAI } from '@google/genai';
 import type { GenerationRequest, ProviderAdapter, ProviderResult } from '@/core/ai';
 import type { ProviderName } from '@/config/providers';
 
+const PROVIDER_TIMEOUT_MS = 90_000;
+
+async function withProviderTimeout<T>(operation: Promise<T>, timeoutMs = PROVIDER_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Google provider timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function aspectRatio(width: number, height: number): string {
   const ratio = width / height;
   if (Math.abs(ratio - 16 / 9) < 0.03) return '16:9';
@@ -106,7 +122,7 @@ export async function analyzeImageWithGoogle(input: { apiKey: string; model: str
     `Analysis depth: ${depth}.`,
   ].join('\n');
 
-  const response = await ai.models.generateContent({
+  const response = await withProviderTimeout(ai.models.generateContent({
     model: input.model,
     contents: [{
       role: 'user',
@@ -115,7 +131,7 @@ export async function analyzeImageWithGoogle(input: { apiKey: string; model: str
         { inlineData: { mimeType: input.mimeType, data: input.base64 } },
       ],
     }],
-  });
+  }));
   const text = response.text?.trim() ?? '';
   if (!text) throw new Error('Google image-analysis model returned no result');
   return { provider: 'google', model: input.model, result: normalizeAuthenticityResult(parseJsonObject(text)) };
@@ -131,7 +147,7 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
       parts.push({ inlineData: { mimeType: image.mimeType, data: image.base64 } });
     }
 
-    const response = await ai.models.generateContent({
+    const response = await withProviderTimeout(ai.models.generateContent({
       model: request.model,
       contents: [{ role: 'user', parts }],
       config: {
@@ -141,7 +157,7 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
           imageSize: imageSize(request.quality),
         },
       },
-    });
+    }));
 
     for (const part of response.candidates?.[0]?.content?.parts ?? []) {
       if (part.thought) continue;
@@ -156,7 +172,7 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
     const started = Date.now();
     try {
       const ai = new GoogleGenAI({ apiKey });
-      await ai.models.get({ model });
+      await withProviderTimeout(ai.models.get({ model }), 15_000);
       return { ok: true, latencyMs: Date.now() - started };
     } catch (error) {
       return { ok: false, latencyMs: Date.now() - started, message: error instanceof Error ? error.message : 'Google health check failed' };
