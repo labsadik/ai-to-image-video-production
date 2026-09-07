@@ -1,9 +1,6 @@
 import { getSupabaseAdmin } from './supabase-admin';
-import type { QualityKey } from '@/config/providers';
-import { openRouterRuntimeConfig, resolveOpenRouterImageModel } from '@/core/providers/openrouter';
-import { pollinationsRuntimeConfig, resolvePollinationsImageModel } from '@/core/providers/pollinations';
 
-export type ProviderProtocol = 'google_gemini' | 'openai_images' | 'generic_json' | 'huggingface_image' | 'huggingface_vlm' | 'huggingface_image_classification' | 'openrouter_images' | 'pollinations_images' | 'fal_images' | 'fal_video' | 'ideogram_images';
+export type ProviderProtocol = 'google_gemini' | 'fal_images' | 'fal_video';
 
 export interface RuntimeProviderConfig {
   provider: string;
@@ -21,22 +18,7 @@ export interface RuntimeProviderConfig {
     headers?: Record<string, string>;
     body?: unknown;
     response?: { base64Path?: string; mimeTypePath?: string; externalIdPath?: string };
-    provider?: string;
   };
-}
-
-type RuntimeProviderRouteConfig = RuntimeProviderConfig & { fallbackProviderId?: string; fallbackModelId?: string };
-
-async function getProvider(providerId: string) {
-  const admin = getSupabaseAdmin();
-  const { data: provider, error } = await admin.from('ai_providers').select('id,enabled,secret_env,base_url,protocol,request_config,timeout_ms').eq('id', providerId).maybeSingle();
-  if (error) throw new Error(`AI provider lookup failed: ${error.message}`);
-  if (!provider?.enabled) throw new Error(`AI provider is disabled: ${providerId}`);
-  return provider;
-}
-
-function toRuntimeConfig(provider: Awaited<ReturnType<typeof getProvider>>, modelKey: string): RuntimeProviderConfig {
-  return { provider: provider.id, protocol: provider.protocol as ProviderProtocol, baseUrl: provider.base_url ?? '', secretEnv: provider.secret_env, model: modelKey, timeoutMs: Number(provider.timeout_ms ?? 120000), requestConfig: (provider.request_config ?? {}) as RuntimeProviderConfig['requestConfig'] };
 }
 
 export async function resolveProviderConfig(providerId: string, modelId: string): Promise<RuntimeProviderConfig> {
@@ -48,46 +30,13 @@ export async function resolveProviderConfig(providerId: string, modelId: string)
   if (providerError) throw new Error(`AI provider lookup failed: ${providerError.message}`);
   if (modelError) throw new Error(`AI model lookup failed: ${modelError.message}`);
   if (!provider?.enabled || !model?.enabled || model.provider_id !== provider.id) throw new Error(`AI provider/model is disabled or mismatched: ${providerId}/${modelId}`);
-  return toRuntimeConfig(provider, model.model_key);
-}
-
-async function resolveEnvSelectedProvider(quality: QualityKey, operation: 'generateImage' | 'editImage' = 'generateImage'): Promise<RuntimeProviderConfig | null> {
-  const selected = process.env.SOLAMENTIS_ACTIVE_PROVIDER?.trim().toLowerCase() || process.env.SOLAMENTIS_IMAGE_PROVIDER?.trim().toLowerCase() || (process.env.POLLINATIONS_API_KEY ? 'pollinations' : '') || (process.env.OPENROUTER_API_KEY ? 'openrouter' : '');
-  if (!selected) return null;
-  if (selected === 'openrouter') { if (operation !== 'generateImage') return null; const model = await resolveOpenRouterImageModel(); return openRouterRuntimeConfig(model); }
-  if (selected === 'pollinations') { if (operation !== 'generateImage') return null; const model = await resolvePollinationsImageModel(); return pollinationsRuntimeConfig(model); }
-  const provider = await getProvider(selected);
-  const capability = operation === 'editImage' ? 'supports_edit' : 'supports_generate';
-  const admin = getSupabaseAdmin();
-  const { data: models, error: modelError } = await admin.from('ai_models').select('id,provider_id,model_key,enabled,supports_generate,supports_edit,metadata').eq('provider_id', provider.id).eq('enabled', true).eq(capability, true);
-  if (modelError) throw new Error(`Configured AI provider model lookup failed: ${modelError.message}`);
-  const matching = (models ?? []).find(model => {
-    if (operation === 'editImage') return true;
-    const metadata = (model.metadata ?? {}) as Record<string, unknown>;
-    const tiers = Array.isArray(metadata.tiers) ? metadata.tiers.map(String) : [];
-    return metadata.tier === quality || tiers.includes(quality);
-  });
-  if (!matching) throw new Error(`No enabled ${operation} model configured for ${selected} at quality=${quality}`);
-  return toRuntimeConfig(provider, matching.model_key);
-}
-
-export async function resolveLiveProviderModel(planId: string, quality: QualityKey): Promise<RuntimeProviderRouteConfig> {
-  const envSelected = await resolveEnvSelectedProvider(quality, 'generateImage');
-  if (envSelected) return envSelected;
-  const admin = getSupabaseAdmin();
-  const { data: route, error } = await admin.from('ai_plan_routes').select('enabled,provider_id,model_id,fallback_provider_id,fallback_model_id').eq('plan_id', planId).eq('quality', quality).maybeSingle();
-  if (error) throw new Error(`AI route lookup failed: ${error.message}`);
-  if (!route?.enabled) throw new Error(`No active AI route for plan=${planId}, quality=${quality}`);
-  const primary = await resolveProviderConfig(route.provider_id, route.model_id);
-  return { ...primary, fallbackProviderId: route.fallback_provider_id ?? undefined, fallbackModelId: route.fallback_model_id ?? undefined };
-}
-
-export async function resolveLiveEditProviderModel(planId: string, quality: QualityKey): Promise<RuntimeProviderRouteConfig> {
-  const envSelected = await resolveEnvSelectedProvider(quality, 'editImage');
-  if (envSelected) return envSelected;
-  const admin = getSupabaseAdmin();
-  const { data: route, error } = await admin.from('ai_plan_routes').select('enabled,provider_id,model_id').eq('plan_id', planId).eq('quality', quality).maybeSingle();
-  if (error) throw new Error(`AI edit route lookup failed: ${error.message}`);
-  if (!route?.enabled) throw new Error(`No active AI edit route for plan=${planId}, quality=${quality}`);
-  return resolveProviderConfig(route.provider_id, route.model_id);
+  return {
+    provider: provider.id,
+    protocol: provider.protocol as ProviderProtocol,
+    baseUrl: provider.base_url ?? '',
+    secretEnv: provider.secret_env,
+    model: model.model_key,
+    timeoutMs: Number(provider.timeout_ms ?? 120000),
+    requestConfig: (provider.request_config ?? {}) as RuntimeProviderConfig['requestConfig'],
+  };
 }
