@@ -14,7 +14,6 @@ const safety = new PolicySafetyEngine();
 const QUALITY: VideoAdQuality = 'standard';
 const ratios = new Set(['16:9', '9:16', '1:1']);
 const validDurations: number[] = [VIDEO_AD_LIMITS.minDurationSeconds, VIDEO_AD_LIMITS.maxDurationSeconds];
-const FAL_VIDEO_MODEL = 'fal-ai/kling-video/v2.6/pro/text-to-video';
 
 export async function POST(request: Request) {
   try {
@@ -46,8 +45,8 @@ export async function POST(request: Request) {
       throw new SafetyPolicyViolation(safetyResult);
     }
 
-    const route = await resolveFeatureRoute(plan, 'video_generation', 'standard');
-    if (route.provider !== 'fal' || route.protocol !== 'fal_video' || route.model !== FAL_VIDEO_MODEL) throw new Error('Video generation must use the configured Fal Kling video model');
+    const route = await resolveFeatureRoute(plan, 'video_generation', QUALITY);
+    if (route.protocol !== 'fal_video') throw new Error(`Video generation route must use a configured fal_video provider; received ${route.protocol}`);
     await getProviderSecret(route.provider, route.secretEnv);
 
     const credits = videoAdCredits(plan, QUALITY);
