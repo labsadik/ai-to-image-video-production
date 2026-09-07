@@ -46,7 +46,6 @@ Deno.serve(async (req: Request) => {
         const periodStart = epochToIso(object.current_period_start); const periodEnd = epochToIso(object.current_period_end);
         const { error: subError } = await admin.from("subscriptions").upsert({ user_id: userId, plan_id: planId, status, provider: "stripe", external_customer_id: object.customer ?? null, external_subscription_id: object.id, current_period_start: periodStart, current_period_end: periodEnd, cancel_at_period_end: Boolean(object.cancel_at_period_end), country_code: String(object.metadata?.country_code ?? "").toUpperCase() || null, metadata: { country_code: object.metadata?.country_code ?? null, billing_period: object.metadata?.billing_period ?? null } }, { onConflict: "user_id" });
         if (subError) throw new Error(`Subscription sync failed: ${subError.message}`);
-        if (status === "active") { const { error } = await admin.rpc("activate_paid_plan", { p_user_id: userId, p_plan_id: planId, p_period_start: periodStart, p_period_end: periodEnd, p_idempotency_key: `stripe:subscription:${String(object.id)}:${String(object.current_period_end ?? eventId)}`, p_metadata: { provider: "stripe", subscription_id: String(object.id), event_id: eventId } }); if (error) throw new Error(`Subscription credit activation failed: ${error.message}`); }
       }
     }
     if (eventType === "invoice.paid" && object.subscription) {
@@ -54,7 +53,7 @@ Deno.serve(async (req: Request) => {
       if (subscription?.user_id && subscription.plan_id && subscription.plan_id !== "free") {
         const periodStart = epochToIso(object.period_start); const periodEnd = epochToIso(object.period_end);
         const { error } = await admin.rpc("activate_paid_plan", { p_user_id: subscription.user_id, p_plan_id: subscription.plan_id, p_period_start: periodStart, p_period_end: periodEnd, p_idempotency_key: `stripe:invoice:${String(object.id)}`, p_metadata: { provider: "stripe", invoice_id: String(object.id), event_id: eventId } });
-        if (error) throw new Error(`Renewal credit activation failed: ${error.message}`);
+        if (error) throw new Error(`Paid invoice activation failed: ${error.message}`);
         const { count } = await admin.from("billing_transactions").select("id", { count: "exact", head: true }).eq("user_id", subscription.user_id).eq("stripe_subscription_id", String(object.subscription)).eq("kind", "plan");
         const kind = Number(count ?? 0) > 0 ? "renewal" : "plan";
         await saveBillingTransaction(admin, { user_id: subscription.user_id, provider: "stripe", kind, status: "paid", plan_id: subscription.plan_id, description: `${subscription.plan_id === "business" ? "Growth" : "Starter"} ${kind === "plan" ? "subscription" : "renewal"}`, amount_minor: Number(object.amount_paid ?? 0), currency: String(object.currency ?? "USD").toUpperCase(), stripe_invoice_id: String(object.id), stripe_customer_id: object.customer ?? null, stripe_subscription_id: String(object.subscription), external_event_id: eventId, receipt_url: object.hosted_invoice_url ?? null, purchased_at: epochToIso(object.status_transitions?.paid_at) ?? new Date().toISOString(), period_start: periodStart, period_end: periodEnd, metadata: { provider_event: eventType, invoice_number: object.number ?? null } });
