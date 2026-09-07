@@ -3,24 +3,17 @@ import { randomUUID } from 'node:crypto';
 import { getSupabaseServerClient } from '@/server/supabase';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { consumeRateLimit } from '@/server/rate-limit';
+import { resolveFeatureRoute } from '@/server/feature-routing';
+import { getProviderSecret } from '@/server/provider-secrets';
 import { PolicySafetyEngine, SafetyPolicyViolation } from '@/core/safety';
 import { getActiveSafetyPolicyVersion, recordSafetyEvent } from '@/server/safety-events';
 import { canUseVideoAd, videoAdCredits, VIDEO_AD_LIMITS, type VideoAdQuality } from '@/config/media-features';
-import { resolveOpenRouterVideoModel } from '@/core/providers/openrouter';
-import { resolvePollinationsVideoModel } from '@/core/providers/pollinations';
 
 export const runtime = 'nodejs';
 const safety = new PolicySafetyEngine();
 const qualities = new Set<VideoAdQuality>(['standard', 'high_end']);
-const ratios = new Set(['16:9', '9:16', '1:1', '4:3', '3:4']);
-
-function resolveVideoProvider() {
-  const configured = process.env.SOLAMENTIS_VIDEO_PROVIDER?.trim().toLowerCase();
-  if (configured === 'pollinations' || configured === 'openrouter') return configured;
-  if (process.env.POLLINATIONS_API_KEY) return 'pollinations';
-  if (process.env.OPENROUTER_API_KEY) return 'openrouter';
-  throw new Error('No video provider is configured. Set POLLINATIONS_API_KEY or OPENROUTER_API_KEY.');
-}
+const ratios = new Set(['16:9', '9:16', '1:1']);
+const FAL_VIDEO_MODEL = 'fal-ai/kling-video/v2.6/pro/text-to-video';
 
 export async function POST(request: Request) {
   try {
@@ -36,14 +29,14 @@ export async function POST(request: Request) {
     const quality = String(body.quality ?? 'standard') as VideoAdQuality;
     const aspectRatio = String(body.aspectRatio ?? '16:9');
     if (prompt.length < 3 || prompt.length > 8000) return NextResponse.json({ error: 'Prompt must be between 3 and 8000 characters' }, { status: 400 });
-    if (!Number.isInteger(duration) || duration < VIDEO_AD_LIMITS.minDurationSeconds || duration > VIDEO_AD_LIMITS.maxDurationSeconds) return NextResponse.json({ error: `Duration must be between ${VIDEO_AD_LIMITS.minDurationSeconds} and ${VIDEO_AD_LIMITS.maxDurationSeconds} seconds` }, { status: 400 });
-    if (!qualities.has(quality) || !ratios.has(aspectRatio)) return NextResponse.json({ error: 'Invalid video ad quality or aspect ratio' }, { status: 400 });
+    if (!Number.isInteger(duration) || ![5, 10].includes(duration)) return NextResponse.json({ error: 'Duration must be 5 or 10 seconds' }, { status: 400 });
+    if (!qualities.has(quality) || !ratios.has(aspectRatio)) return NextResponse.json({ error: 'Invalid video quality or aspect ratio' }, { status: 400 });
 
     const admin = getSupabaseAdmin();
     const { data: profile, error: profileError } = await admin.from('profiles').select('plan_id').eq('id', user.id).single();
     if (profileError || !profile || !['free', 'pro', 'business'].includes(profile.plan_id)) return NextResponse.json({ error: 'Account configuration unavailable' }, { status: 409 });
     const plan = profile.plan_id as 'free' | 'pro' | 'business';
-    if (!canUseVideoAd(plan, quality)) return NextResponse.json({ error: `${quality} video ads are not available on the ${plan} plan` }, { status: 403 });
+    if (!canUseVideoAd(plan, quality)) return NextResponse.json({ error: `${quality} video generation is not available on the ${plan} plan` }, { status: 403 });
 
     const safetyResult = await safety.check({ prompt, assetUrls: [] });
     const policyVersion = await getActiveSafetyPolicyVersion();
@@ -53,14 +46,13 @@ export async function POST(request: Request) {
       throw new SafetyPolicyViolation(safetyResult);
     }
 
-    const provider = resolveVideoProvider();
+    const route = await resolveFeatureRoute(plan, 'video_ad', 'standard');
+    if (route.provider !== 'fal' || route.protocol !== 'fal_video' || route.model !== FAL_VIDEO_MODEL) throw new Error('Video generation must use the configured Fal Kling video model');
+    await getProviderSecret(route.provider, route.secretEnv);
+
     const credits = videoAdCredits(plan, quality);
     const resolution = quality === 'high_end' ? '1080p' : '720p';
-    const model = provider === 'pollinations'
-      ? await resolvePollinationsVideoModel(resolution)
-      : await resolveOpenRouterVideoModel(duration, resolution);
     const idempotencyKey = `video-ad:${randomUUID()}`;
-
     const { data: job, error: insertError } = await admin.from('generation_jobs').insert({
       user_id: user.id,
       project_id: typeof body.projectId === 'string' ? body.projectId : null,
@@ -69,29 +61,20 @@ export async function POST(request: Request) {
       prompt,
       size: aspectRatio,
       quality: quality === 'high_end' ? 'premium' : 'standard',
-      provider,
-      model,
+      provider: route.provider,
+      model: route.model,
       reserved_credits: 0,
       idempotency_key: idempotencyKey,
       request: {
-        plan,
-        operation: 'generateVideoAd',
-        prompt,
-        durationSeconds: duration,
-        aspectRatio,
-        videoQuality: quality,
-        resolution,
-        generateAudio: false,
-        watermark: plan === 'free',
-        safetyPolicyVersion: policyVersion,
-        safetyApplied: true,
-        videoProvider: provider,
+        plan, operation: 'generateVideoAd', prompt, durationSeconds: duration, aspectRatio,
+        videoQuality: quality, resolution, generateAudio: false, watermark: plan === 'free',
+        safetyPolicyVersion: policyVersion, safetyApplied: true, videoProvider: route.provider,
       },
     }).select('*').single();
-    if (insertError || !job) throw new Error(insertError?.message ?? 'Unable to create video ad job');
+    if (insertError || !job) throw new Error(insertError?.message ?? 'Unable to create video job');
 
     try {
-      await recordSafetyEvent({ userId: user.id, jobId: job.id, stage: 'prompt_validation', decision: 'allow', reasons: [], score: safetyResult.score, policyVersion, providerId: provider, modelKey: model });
+      await recordSafetyEvent({ userId: user.id, jobId: job.id, stage: 'prompt_validation', decision: 'allow', reasons: [], score: safetyResult.score, policyVersion, providerId: route.provider, modelKey: route.model });
       const { data: reserved, error: reserveError } = await admin.rpc('reserve_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: idempotencyKey });
       if (reserveError) throw new Error(`Credit reservation failed: ${reserveError.message}`);
       if (!reserved) throw new Error('Insufficient credits');
@@ -99,7 +82,7 @@ export async function POST(request: Request) {
       if (attachError || !reservedJob) throw new Error(attachError?.message ?? 'Unable to attach reserved credits');
       const { error: queueError } = await admin.rpc('enqueue_generation_job', { p_job_id: job.id });
       if (queueError) throw new Error(`Queue enqueue failed: ${queueError.message}`);
-      return NextResponse.json({ jobId: job.id, status: 'queued', provider, model, durationSeconds: duration, quality, credits, safetyApplied: true });
+      return NextResponse.json({ jobId: job.id, status: 'queued', provider: route.provider, model: route.model, durationSeconds: duration, quality, credits, safetyApplied: true });
     } catch (error) {
       await admin.from('generation_jobs').update({ status: 'failed', error_code: 'VIDEO_REQUEST_FAILED', error_message: error instanceof Error ? error.message : 'Video request failed', completed_at: new Date().toISOString() }).eq('id', job.id);
       await admin.rpc('refund_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: idempotencyKey });
@@ -107,6 +90,6 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     if (error instanceof SafetyPolicyViolation) return NextResponse.json({ error: 'Generation blocked by safety policy', decision: error.decision, reasons: error.reasons, policyVersion: error.policyVersion }, { status: error.decision === 'block' ? 422 : 409 });
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Video ad generation failed' }, { status: 400 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Video generation failed' }, { status: 400 });
   }
 }
