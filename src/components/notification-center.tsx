@@ -17,6 +17,10 @@ type NotificationRow = {
   created_at: string;
 };
 
+type UserResult = { data: { user: { id: string } | null } };
+type QueryResult = { data: NotificationRow[] | null };
+type RealtimePayload = { new: NotificationRow };
+
 const iconFor = (kind: string) => {
   if (kind.includes('credit')) return Coins;
   if (kind.includes('plan')) return CreditCard;
@@ -50,7 +54,7 @@ export function NotificationCenter() {
   useEffect(() => {
     let mounted = true;
     const supabase = getSupabaseBrowserClient();
-    void supabase.auth.getUser().then(({ data }) => { if (mounted) setUserId(data.user?.id ?? null); });
+    void (supabase.auth.getUser() as Promise<UserResult>).then(({ data }) => { if (mounted) setUserId(data.user?.id ?? null); });
     return () => { mounted = false; };
   }, []);
 
@@ -60,17 +64,17 @@ export function NotificationCenter() {
     const supabase = getSupabaseBrowserClient();
     setLoading(true);
     void supabase.from('notifications').select('id,user_id,kind,title,body,severity,metadata,read_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(30)
-      .then(({ data }) => { if (mounted) { setNotifications((data ?? []) as NotificationRow[]); setLoading(false); } });
+      .then(({ data }: QueryResult) => { if (mounted) { setNotifications(data ?? []); setLoading(false); } });
 
     const channel = supabase
       .channel(`user-notifications:${userId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (payload) => {
-        const item = payload.new as NotificationRow;
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (payload: RealtimePayload) => {
+        const item = payload.new;
         if (!mounted) return;
         setNotifications((current) => [item, ...current.filter((existing) => existing.id !== item.id)].slice(0, 30));
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (payload) => {
-        const item = payload.new as NotificationRow;
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (payload: RealtimePayload) => {
+        const item = payload.new;
         if (!mounted) return;
         setNotifications((current) => current.map((existing) => existing.id === item.id ? item : existing));
       })
