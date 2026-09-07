@@ -28,6 +28,14 @@ async function verify(raw: string, signature: string, secret: string) {
 }
 function epochToIso(value: unknown) { return typeof value === "number" && Number.isFinite(value) ? new Date(value * 1000).toISOString() : null; }
 
+async function saveBillingTransaction(admin: ReturnType<typeof createClient>, values: Record<string, unknown>) {
+  const externalEventId = typeof values.external_event_id === "string" ? values.external_event_id : null;
+  const checkoutSessionId = typeof values.stripe_checkout_session_id === "string" ? values.stripe_checkout_session_id : null;
+  if (!values.user_id || (!externalEventId && !checkoutSessionId)) return;
+  const { error } = await admin.from("billing_transactions").upsert(values, { onConflict: externalEventId ? "provider,external_event_id" : "stripe_checkout_session_id" });
+  if (error) throw new Error(`Billing history save failed: ${error.message}`);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
   if (!key || !webhookSecret) return Response.json({ error: "Billing webhook is not configured" }, { status: 503 });
@@ -61,17 +69,9 @@ Deno.serve(async (req: Request) => {
         const amountMinor = Number(object.amount_total ?? object.metadata?.amount_minor ?? 0);
         const purchaseAt = epochToIso(object.created) ?? epochToIso(event.created);
         if (userId && productId && countryCode && currency && Number.isSafeInteger(amountMinor) && amountMinor > 0) {
-          const { error } = await admin.rpc("grant_credit_product_purchase", {
-            p_user_id: userId,
-            p_product_id: productId,
-            p_country_code: countryCode,
-            p_currency: currency,
-            p_amount_minor: amountMinor,
-            p_idempotency_key: `stripe:credit-pack:${String(object.id)}`,
-            p_external_reference: String(object.id),
-            p_metadata: { provider: "stripe", checkout_session_id: String(object.id), event_id: eventId, purchase_at: purchaseAt },
-          });
+          const { error } = await admin.rpc("grant_credit_product_purchase", { p_user_id: userId, p_product_id: productId, p_country_code: countryCode, p_currency: currency, p_amount_minor: amountMinor, p_idempotency_key: `stripe:credit-pack:${String(object.id)}`, p_external_reference: String(object.id), p_metadata: { provider: "stripe", checkout_session_id: String(object.id), event_id: eventId, purchase_at: purchaseAt } });
           if (error) throw new Error(`Credit pack grant failed: ${error.message}`);
+          await saveBillingTransaction(admin, { user_id: userId, provider: "stripe", kind: "credit_pack", status: "paid", product_id: productId, description: `${object.metadata?.credits ?? "Credit"} credits`, amount_minor: amountMinor, currency, country_code: countryCode, stripe_checkout_session_id: String(object.id), stripe_payment_intent_id: object.payment_intent ?? null, stripe_customer_id: object.customer ?? null, external_event_id: eventId, purchased_at: purchaseAt ?? new Date().toISOString(), metadata: { credits: Number(object.metadata?.credits ?? 0), provider_event: eventType } });
         }
       }
       if (object.mode === "payment" && object.payment_status === "paid" && object.metadata?.purchase_kind === "addon") {
@@ -79,6 +79,7 @@ Deno.serve(async (req: Request) => {
         if (userId && Number.isInteger(credits) && credits > 0) {
           const { error } = await admin.rpc("grant_addon_credits", { p_user_id: userId, p_amount: credits, p_idempotency_key: `stripe:addon:${String(object.id)}`, p_external_reference: String(object.id), p_metadata: { provider: "stripe", checkout_session_id: String(object.id), event_id: eventId, product_id: object.metadata?.product_id ?? null } });
           if (error) throw new Error(`Credit grant failed: ${error.message}`);
+          await saveBillingTransaction(admin, { user_id: userId, provider: "stripe", kind: "addon", status: "paid", product_id: object.metadata?.product_id ?? null, description: `${credits} add-on credits`, amount_minor: Number(object.amount_total ?? 0), currency: String(object.currency ?? "USD").toUpperCase(), stripe_checkout_session_id: String(object.id), stripe_payment_intent_id: object.payment_intent ?? null, stripe_customer_id: object.customer ?? null, external_event_id: eventId, purchased_at: epochToIso(object.created) ?? new Date().toISOString(), metadata: { credits, provider_event: eventType } });
         }
       }
       if (object.mode === "subscription" && userId && planId) {
@@ -86,8 +87,9 @@ Deno.serve(async (req: Request) => {
         const periodEnd = epochToIso(object.current_period_end) ?? new Date(Date.now() + 31 * 86400000).toISOString();
         const { error: activationError } = await admin.rpc("activate_paid_plan", { p_user_id: userId, p_plan_id: planId, p_period_start: periodStart, p_period_end: periodEnd, p_idempotency_key: `stripe:subscription:${String(object.subscription ?? object.id)}:initial`, p_metadata: { provider: "stripe", checkout_session_id: String(object.id), event_id: eventId } });
         if (activationError) throw new Error(`Plan activation failed: ${activationError.message}`);
-        const { error: subError } = await admin.from("subscriptions").upsert({ user_id: userId, plan_id: planId, status: "active", provider: "stripe", external_customer_id: object.customer ?? null, external_subscription_id: object.subscription ?? null, external_checkout_session_id: String(object.id), current_period_start: periodStart, current_period_end: periodEnd, metadata: { country_code: object.metadata?.country_code ?? null } }, { onConflict: "user_id" });
+        const { error: subError } = await admin.from("subscriptions").upsert({ user_id: userId, plan_id: planId, status: "active", provider: "stripe", external_customer_id: object.customer ?? null, external_subscription_id: object.subscription ?? null, external_checkout_session_id: String(object.id), current_period_start: periodStart, current_period_end: periodEnd, metadata: { country_code: object.metadata?.country_code ?? null, billing_period: object.metadata?.billing_period ?? null } }, { onConflict: "user_id" });
         if (subError) throw new Error(`Subscription record failed: ${subError.message}`);
+        await saveBillingTransaction(admin, { user_id: userId, provider: "stripe", kind: "plan", status: "paid", plan_id: String(planId), description: `${planId === "business" ? "Growth" : "Starter"} subscription`, amount_minor: Number(object.amount_total ?? 0), currency: String(object.currency ?? object.metadata?.currency ?? "USD").toUpperCase(), country_code: String(object.metadata?.country_code ?? "").toUpperCase() || null, stripe_checkout_session_id: String(object.id), stripe_payment_intent_id: object.payment_intent ?? null, stripe_customer_id: object.customer ?? null, stripe_subscription_id: object.subscription ?? null, external_event_id: eventId, purchased_at: epochToIso(object.created) ?? new Date().toISOString(), period_start: periodStart, period_end: periodEnd, metadata: { provider_event: eventType } });
       }
     }
     if (eventType === "customer.subscription.created" || eventType === "customer.subscription.updated") {
@@ -105,8 +107,11 @@ Deno.serve(async (req: Request) => {
     if (eventType === "invoice.paid" && object.subscription) {
       const { data: subscription } = await admin.from("subscriptions").select("user_id,plan_id").eq("provider", "stripe").eq("external_subscription_id", String(object.subscription)).maybeSingle();
       if (subscription?.user_id && subscription.plan_id && subscription.plan_id !== "free") {
-        const { error } = await admin.rpc("activate_paid_plan", { p_user_id: subscription.user_id, p_plan_id: subscription.plan_id, p_period_start: epochToIso(object.period_start), p_period_end: epochToIso(object.period_end), p_idempotency_key: `stripe:invoice:${String(object.id)}`, p_metadata: { provider: "stripe", invoice_id: String(object.id), event_id: eventId } });
+        const periodStart = epochToIso(object.period_start);
+        const periodEnd = epochToIso(object.period_end);
+        const { error } = await admin.rpc("activate_paid_plan", { p_user_id: subscription.user_id, p_plan_id: subscription.plan_id, p_period_start: periodStart, p_period_end: periodEnd, p_idempotency_key: `stripe:invoice:${String(object.id)}`, p_metadata: { provider: "stripe", invoice_id: String(object.id), event_id: eventId } });
         if (error) throw new Error(`Renewal credit activation failed: ${error.message}`);
+        await saveBillingTransaction(admin, { user_id: subscription.user_id, provider: "stripe", kind: "renewal", status: "paid", plan_id: subscription.plan_id, description: `${subscription.plan_id === "business" ? "Growth" : "Starter"} renewal`, amount_minor: Number(object.amount_paid ?? 0), currency: String(object.currency ?? "USD").toUpperCase(), stripe_invoice_id: String(object.id), stripe_customer_id: object.customer ?? null, stripe_subscription_id: String(object.subscription), external_event_id: eventId, receipt_url: object.hosted_invoice_url ?? null, purchased_at: epochToIso(object.status_transitions?.paid_at) ?? new Date().toISOString(), period_start: periodStart, period_end: periodEnd, metadata: { provider_event: eventType, invoice_number: object.number ?? null } });
       }
     }
     if (eventType === "customer.subscription.deleted") {
