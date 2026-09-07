@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/server/supabase';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { consumeRateLimit } from '@/server/rate-limit';
+import { logServerError } from '@/server/production-log';
 import type { BillingPeriod, PlanId } from '@/config/plan-display';
 
 export const runtime = 'nodejs';
@@ -13,10 +14,12 @@ function appUrl(request: Request) { const configured = process.env.NEXT_PUBLIC_A
 async function createStripeCheckout(params: Record<string, string>, idempotencyKey: string) { const secret = process.env.STRIPE_SECRET_KEY; if (!secret) throw new Error('Stripe checkout is not configured'); const response = await fetch('https://api.stripe.com/v1/checkout/sessions', { method: 'POST', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': idempotencyKey }, body: new URLSearchParams(params), cache: 'no-store' }); const data = await response.json() as { url?: string; error?: { message?: string } }; if (!response.ok || !data.url) throw new Error(data.error?.message || 'Stripe checkout session could not be created'); return data.url; }
 
 export async function POST(request: Request) {
+  let userId = '';
   try {
     const client = await getSupabaseServerClient();
     const { data: { user } } = await client.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    userId = user.id;
     const rate = await consumeRateLimit(`user:${user.id}:billing-checkout`, 10, 60);
     if (!rate.allowed) return NextResponse.json({ error: 'Too many checkout attempts', retryAfterSeconds: rate.retryAfterSeconds }, { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } });
     const body = await request.json() as { kind?: 'plan' | 'credit_pack'; planId?: unknown; period?: unknown; productId?: unknown; requestId?: unknown };
@@ -50,5 +53,5 @@ export async function POST(request: Request) {
     else { params['line_items[0][price_data][currency]'] = String(price.currency).toLowerCase(); params['line_items[0][price_data][product_data][name]'] = body.planId === 'pro' ? 'Solamentis Starter' : 'Solamentis Growth'; params['line_items[0][price_data][product_data][description]'] = `${body.planId === 'pro' ? 50 : 100} monthly Solamentis credits and plan workspace limits.`; params['line_items[0][price_data][unit_amount]'] = String(Number(price.unit_amount_minor) * body.period); params['line_items[0][price_data][recurring][interval]'] = 'month'; params['line_items[0][price_data][recurring][interval_count]'] = String(body.period); }
     const url = await createStripeCheckout(params, `solamentis:plan:${user.id}:${body.planId}:${body.period}:${requestId}`);
     return NextResponse.json({ url });
-  } catch (error) { const message = error instanceof Error ? error.message : 'Checkout could not be started'; return NextResponse.json({ error: message }, { status: 400 }); }
+  } catch (error) { logServerError('billing.checkout_failed', error, { userId }); const message = error instanceof Error ? error.message : 'Checkout could not be started'; return NextResponse.json({ error: message }, { status: 400 }); }
 }
