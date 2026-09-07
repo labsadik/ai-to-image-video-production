@@ -4,7 +4,7 @@ import sharp from 'sharp';
 import { getSupabaseServerClient } from '@/server/supabase';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { moderateImage } from '@/server/image-moderation';
+import { isImageModerationUnavailable, moderateImage } from '@/server/image-moderation';
 import { createMediaPreview } from '@/lib/media/preview';
 import { compressImageForStorage, MAX_STORAGE_IMAGE_BYTES } from '@/lib/media/compressed-image';
 import { logServerError } from '@/server/production-log';
@@ -167,6 +167,9 @@ export async function POST(request: Request) {
     logServerError('uploads.complete_failed', error);
     if (cleanupPaths.length) {
       try { await getSupabaseAdmin().storage.from('solamentis-assets').remove(cleanupPaths); } catch { /* cleanup is best-effort */ }
+    }
+    if (isImageModerationUnavailable(error)) {
+      return NextResponse.json({ error: 'Image safety moderation is temporarily unavailable. Please try again.' }, { status: 503 });
     }
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Upload finalization failed' }, { status: 400 });
   }
