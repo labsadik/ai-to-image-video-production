@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from '@/server/supabase-admin';
 
 export const runtime = 'nodejs';
 const TTL_SECONDS = 3600;
+type VideoOutput = { id: string; variant: string; storage_path: string; mime_type: string; width: number | null; height: number | null; byte_size: number | null; created_at: string };
 
 export async function GET(_request: Request, { params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = await params;
@@ -31,7 +32,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ job
 
   if (outputError) return NextResponse.json({ error: `Video output lookup failed: ${outputError.message}` }, { status: 500 });
 
-  async function signOutput(output: (typeof outputs extends Array<infer T> ? T : never) | null) {
+  async function signOutput(output: VideoOutput | null) {
     if (!output) return null;
     const { data, error } = await admin.storage.from('solamentis-assets').createSignedUrl(output.storage_path, TTL_SECONDS);
     return { ...output, url: error ? null : data?.signedUrl ?? null };
