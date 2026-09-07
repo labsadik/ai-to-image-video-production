@@ -11,12 +11,13 @@ export default async function DashboardPage() {
   const { data: { user } } = await client.auth.getUser();
   if (!user) return null;
   const admin = getSupabaseAdmin();
-  const [{ data: profile }, { data: projects }, { data: jobs }] = await Promise.all([
+  const [{ data: profile }, { data: projects }, { data: jobs }, { data: nextGrant }] = await Promise.all([
     admin.from('profiles').select('full_name,plan_id,credits,credits_reserved,monthly_credits,addon_credits,country_name,billing_country_code,country_code').eq('id', user.id).single(),
     admin.from('projects').select('id,name,platform,width,height,updated_at').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(6),
     admin.from('generation_jobs').select('id,status,prompt,quality,created_at,completed_at,operation,provider,model').eq('user_id', user.id).order('created_at', { ascending: false }).limit(6),
+    admin.from('credit_grants').select('remaining_amount,expires_at').eq('user_id', user.id).in('source', ['credit_product_purchase', 'addon_purchase']).gt('remaining_amount', 0).not('expires_at', 'is', null).order('expires_at', { ascending: true }).limit(1).maybeSingle(),
   ]);
-  const country = profile?.billing_country_code || profile?.country_code || 'IN';
+  const country = String(profile?.billing_country_code || profile?.country_code || 'IN').toUpperCase();
   const [{ data: region }, { data: products }, { data: productPrices }] = await Promise.all([
     admin.from('pricing_regions').select('country_code,currency').eq('country_code', country).eq('active', true).maybeSingle(),
     admin.from('credit_products').select('id,display_name,credits,sort_order,active').eq('active', true).order('sort_order'),
@@ -43,7 +44,7 @@ export default async function DashboardPage() {
       <Link href="/dashboard/create" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800">New creation <ArrowRight className="size-4" /></Link>
     </section>
 
-    <CreditWallet monthly={monthly} addon={addon} currency={currency} packs={packs} />
+    <CreditWallet monthly={monthly} addon={addon} currency={currency} packs={packs} nextExpiryAt={nextGrant?.expires_at ?? null} nextExpiryCredits={Number(nextGrant?.remaining_amount ?? 0)} />
 
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{metrics.map(([label, value, Icon, note]) => <Card key={label}><CardBody><div className="flex items-center justify-between gap-3"><span className="text-sm font-medium text-slate-500">{label}</span><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-slate-100"><Icon className="size-4" /></span></div><p className="mt-5 text-2xl font-semibold tracking-tight">{value}</p><p className="mt-1 text-xs text-slate-400">{note}</p></CardBody></Card>)}</section>
 
