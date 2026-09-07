@@ -4,7 +4,7 @@ import { getSupabaseAdmin } from './supabase-admin';
 import { resolveProviderConfig, type RuntimeProviderConfig } from './provider-config';
 import type { PublicGenerationQuality } from '@/config/plans';
 
-export type FeatureCategory = 'social_image' | 'text_graphic' | 'image_analysis' | 'video_ad';
+export type FeatureCategory = 'image_generation' | 'image_analysis' | 'video_generation';
 export type FeatureQuality = PublicGenerationQuality | 'standard' | 'hard';
 
 const qualityMap: Record<'preview' | 'standard' | 'premium', PublicGenerationQuality> = {
