@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "worker": "tsx scripts/generation-worker.ts",
+    "worker": "node scripts/automatic-worker.js",
     "cleanup:legacy-images": "tsx scripts/cleanup-legacy-generation-storage.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
