@@ -97,7 +97,7 @@ export async function POST(request: Request) {
       await recordSafetyEvent({ userId: user.id, jobId: job.id, stage: 'prompt_validation', decision: 'allow', reasons: [], score: safetyResult.score, policyVersion, providerId: route.provider, modelKey: route.model });
       const { data: reserved, error: reserveError } = await admin.rpc('reserve_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: idempotencyKey });
       if (reserveError) throw new Error(`Credit reservation failed: ${reserveError.message}`);
-      if (!reserved) return NextResponse.json({ error: 'Insufficient credits' }, { status: 402 });
+      if (!reserved) throw new Error('Insufficient credits');
       const { data: reservedJob, error: attachError } = await admin.from('generation_jobs').update({ reserved_credits: credits }).eq('id', job.id).eq('reserved_credits', 0).select('*').single();
       if (attachError || !reservedJob) throw new Error(attachError?.message ?? 'Unable to attach reserved credits');
       const { error: queueError } = await admin.rpc('enqueue_generation_job', { p_job_id: job.id });
@@ -105,7 +105,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ jobId: job.id, status: 'queued', provider: route.provider, model: route.model, durationSeconds: duration, quality: QUALITY, credits, safetyApplied: true });
     } catch (error) {
       await admin.from('generation_jobs').update({ status: 'failed', error_code: 'VIDEO_REQUEST_FAILED', error_message: error instanceof Error ? error.message : 'Video request failed', completed_at: new Date().toISOString() }).eq('id', job.id);
-      if (!(error instanceof Error && error.message === 'Insufficient credits')) await admin.rpc('refund_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: `${idempotencyKey}:refund` });
+      if (error instanceof Error && error.message === 'Insufficient credits') {
+        // No reservation was created, so there is nothing to refund.
+      } else {
+        await admin.rpc('refund_generation_credits', { p_user_id: user.id, p_amount: credits, p_idempotency_key: `${idempotencyKey}:refund` });
+      }
       throw error;
     }
   } catch (error) {
