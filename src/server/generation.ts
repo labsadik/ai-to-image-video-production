@@ -62,7 +62,13 @@ export async function createGenerationJob(input: GenerationRequest & { platform?
     },
   }).select('*').single();
 
-  if (insertError || !job) throw new Error(insertError?.message ?? 'Unable to create generation job');
+  if (insertError || !job) {
+    if (insertError?.code === '23505') {
+      const { data: duplicate } = await admin.from('generation_jobs').select('*').eq('user_id', input.userId).eq('idempotency_key', idempotencyKey).maybeSingle();
+      if (duplicate) return duplicate;
+    }
+    throw new Error(insertError?.message ?? 'Unable to create generation job');
+  }
 
   try {
     await recordSafetyEvent({ userId: input.userId, jobId: job.id, stage: 'prompt_validation', decision: 'allow', reasons: [], score: planned.safety.score, policyVersion: planned.safety.policyVersion });
