@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from './supabase-admin';
 
-export type ProviderProtocol = 'google_gemini' | 'fal_images' | 'fal_video';
+export type ProviderProtocol = 'google_gemini' | 'fal_video';
 
 export interface RuntimeProviderConfig {
   provider: string;
@@ -30,6 +30,7 @@ export async function resolveProviderConfig(providerId: string, modelId: string)
   if (providerError) throw new Error(`AI provider lookup failed: ${providerError.message}`);
   if (modelError) throw new Error(`AI model lookup failed: ${modelError.message}`);
   if (!provider?.enabled || !model?.enabled || model.provider_id !== provider.id) throw new Error(`AI provider/model is disabled or mismatched: ${providerId}/${modelId}`);
+  if (provider.protocol !== 'google_gemini' && provider.protocol !== 'fal_video') throw new Error(`Unsupported AI provider protocol: ${provider.protocol}`);
   return {
     provider: provider.id,
     protocol: provider.protocol as ProviderProtocol,
