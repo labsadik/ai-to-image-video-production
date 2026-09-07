@@ -1,14 +1,21 @@
+import Link from 'next/link';
+import { FolderKanban, Image, Sparkles, Video } from 'lucide-react';
 import { getSupabaseServerClient } from '@/server/supabase';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
 import { HistoryList } from '@/components/history-list';
 
-export default async function HistoryPage() {
+export default async function HistoryPage({ searchParams }: { searchParams?: Promise<{ project?: string }> }) {
   const client = await getSupabaseServerClient();
   const { data: { user } } = await client.auth.getUser();
   if (!user) return null;
-
+  const params = searchParams ? await searchParams : {};
+  const projectId = typeof params.project === 'string' && params.project.length ? params.project : null;
   const admin = getSupabaseAdmin();
-  const { data: jobs } = await admin.from('generation_jobs').select('id,status,operation,prompt,size,quality,created_at,completed_at,request').eq('user_id', user.id).order('created_at', { ascending: false }).limit(100);
+
+  const [{ data: jobs }, { data: project }] = await Promise.all([
+    admin.from('generation_jobs').select('id,status,operation,prompt,size,quality,created_at,completed_at,request,project_id').eq('user_id', user.id).eq(projectId ? 'project_id' : 'user_id', projectId ?? user.id).order('created_at', { ascending: false }).limit(100),
+    projectId ? admin.from('projects').select('id,name,metadata').eq('id', projectId).eq('user_id', user.id).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
   const jobIds = (jobs ?? []).map(job => job.id);
   const { data: outputs } = jobIds.length
     ? await admin.from('generation_outputs').select('job_id,variant,storage_path,mime_type,width,height,byte_size').in('job_id', jobIds).in('variant', ['master', 'preview'])
@@ -19,35 +26,19 @@ export default async function HistoryPage() {
     return [`${output.job_id}:${output.variant}`, data?.signedUrl ?? null] as const;
   }));
   const signedMap = new Map(signed);
-
   const items = (jobs ?? []).map(job => {
     const master = (outputs ?? []).find(output => output.job_id === job.id && output.variant === 'master');
     const preview = (outputs ?? []).find(output => output.job_id === job.id && output.variant === 'preview');
     const request = (job.request ?? {}) as Record<string, unknown>;
-    return {
-      id: job.id,
-      prompt: job.prompt,
-      operation: job.operation,
-      size: job.size,
-      quality: job.quality,
-      status: job.status,
-      created_at: job.created_at,
-      completed_at: job.completed_at,
-      previewUrl: signedMap.get(`${job.id}:preview`) ?? signedMap.get(`${job.id}:master`) ?? null,
-      masterByteSize: master?.byte_size ?? (typeof request.originalByteSize === 'number' ? request.originalByteSize : null),
-      previewByteSize: preview?.byte_size ?? (typeof request.previewByteSize === 'number' ? request.previewByteSize : null),
-      mimeType: master?.mime_type ?? (typeof request.originalMimeType === 'string' ? request.originalMimeType : null),
-      width: master?.width ?? (typeof request.width === 'number' ? request.width : null),
-      height: master?.height ?? (typeof request.height === 'number' ? request.height : null),
-    };
+    return { id: job.id, prompt: job.prompt, operation: job.operation, size: job.size, quality: job.quality, status: job.status, created_at: job.created_at, completed_at: job.completed_at, previewUrl: signedMap.get(`${job.id}:preview`) ?? signedMap.get(`${job.id}:master`) ?? null, masterByteSize: master?.byte_size ?? (typeof request.originalByteSize === 'number' ? request.originalByteSize : null), previewByteSize: preview?.byte_size ?? (typeof request.previewByteSize === 'number' ? request.previewByteSize : null), mimeType: master?.mime_type ?? (typeof request.originalMimeType === 'string' ? request.originalMimeType : null), width: master?.width ?? (typeof request.width === 'number' ? request.width : null), height: master?.height ?? (typeof request.height === 'number' ? request.height : null) };
   });
+  const projectName = (project?.name ?? '').trim();
 
-  return <div className="space-y-8">
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-400">History</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight">Your media history</h1>
-      <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">Images, videos, and authenticity analyses use the same private storage and history system. Analysis records retain the original upload plus a compressed preview so you can compare sizes later.</p>
-    </div>
+  return <div className="space-y-7 sm:space-y-8">
+    <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-[var(--workspace-muted)]">History</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">{projectName ? `${projectName} history` : 'Your media history'}</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--workspace-muted)]">{projectName ? 'Every image, video, and authenticity analysis associated with this creative workspace.' : 'Images, videos, and authenticity analyses share one private history system. Use a project to keep related work together.'}</p></div>{projectName && <Link href="/dashboard/projects" className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-3 text-xs font-semibold text-[var(--workspace-muted)] hover:bg-[var(--workspace-hover)]"><FolderKanban className="size-4"/>Back to workspaces</Link>}</div>
+    <div className="grid gap-3 sm:grid-cols-4"><HistoryStat icon={<Sparkles className="size-4"/>} label="All" value={items.length}/><HistoryStat icon={<Image className="size-4"/>} label="Images" value={items.filter(item => item.operation === 'generateImage').length}/><HistoryStat icon={<Video className="size-4"/>} label="Videos" value={items.filter(item => item.operation === 'generateVideoAd').length}/><HistoryStat icon={<FolderKanban className="size-4"/>} label="Project" value={projectName ? 'Linked' : 'Mixed'}/></div>
+    {projectName && <div className="rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-soft)] px-4 py-3 text-xs text-[var(--workspace-muted)]">You are viewing only <strong className="text-[var(--workspace-fg)]">{projectName}</strong>. New work is linked from Media Studio using the Creative workspace selector.</div>}
     <HistoryList initialItems={items} />
   </div>;
 }
+function HistoryStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: number | string }) { return <div className="rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-4"><div className="flex items-center gap-2 text-[var(--workspace-muted)]">{icon}<span className="text-[10px] font-semibold uppercase tracking-[.16em]">{label}</span></div><p className="mt-2 text-xl font-semibold">{value}</p></div>; }
