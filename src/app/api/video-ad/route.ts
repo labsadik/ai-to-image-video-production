@@ -13,6 +13,7 @@ export const runtime = 'nodejs';
 const safety = new PolicySafetyEngine();
 const QUALITY: VideoAdQuality = 'standard';
 const ratios = new Set(['16:9', '9:16', '1:1']);
+const validDurations: number[] = [VIDEO_AD_LIMITS.minDurationSeconds, VIDEO_AD_LIMITS.maxDurationSeconds];
 const FAL_VIDEO_MODEL = 'fal-ai/kling-video/v2.6/pro/text-to-video';
 
 export async function POST(request: Request) {
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
     const duration = Number(body.durationSeconds ?? 5);
     const aspectRatio = String(body.aspectRatio ?? '16:9');
     if (prompt.length < 3 || prompt.length > 8000) return NextResponse.json({ error: 'Prompt must be between 3 and 8000 characters' }, { status: 400 });
-    if (!Number.isInteger(duration) || ![VIDEO_AD_LIMITS.minDurationSeconds, VIDEO_AD_LIMITS.maxDurationSeconds].includes(duration)) return NextResponse.json({ error: 'Duration must be 5 or 10 seconds' }, { status: 400 });
+    if (!Number.isInteger(duration) || !validDurations.includes(duration)) return NextResponse.json({ error: 'Duration must be 5 or 10 seconds' }, { status: 400 });
     if (!ratios.has(aspectRatio)) return NextResponse.json({ error: 'Invalid video aspect ratio' }, { status: 400 });
 
     const admin = getSupabaseAdmin();
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
       throw new SafetyPolicyViolation(safetyResult);
     }
 
-    const route = await resolveFeatureRoute(plan, 'video_generation', QUALITY === 'standard' ? 'standard' : 'standard');
+    const route = await resolveFeatureRoute(plan, 'video_generation', 'standard');
     if (route.provider !== 'fal' || route.protocol !== 'fal_video' || route.model !== FAL_VIDEO_MODEL) throw new Error('Video generation must use the configured Fal Kling video model');
     await getProviderSecret(route.provider, route.secretEnv);
 
