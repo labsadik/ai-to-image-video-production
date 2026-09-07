@@ -2,7 +2,6 @@ import { GENERATION_PLANS, publicQuality, type PublicGenerationQuality } from '@
 import { PLATFORM_SPECS, type PlatformId } from '@/config/platforms';
 import { requiredCredits, type GenerationRequest } from '@/core/ai';
 import { PolicySafetyEngine, SafetyPolicyViolation, type SafetyResult } from '@/core/safety';
-import { resolveLiveEditProviderModel } from './provider-config';
 import { resolveFeatureRoute, type FeatureCategory } from './feature-routing';
 import { getActiveSafetyPolicyVersion } from './safety-events';
 
@@ -19,9 +18,6 @@ export interface PlannedGeneration {
   maxExportBytes: number;
   safety: SafetyResult;
   category: FeatureCategory;
-  requestedQuality: PublicGenerationQuality;
-  fallbackProviderId?: string;
-  fallbackModelId?: string;
 }
 
 export async function planGeneration(request: GenerationRequest & { platform?: PlatformId }): Promise<PlannedGeneration> {
@@ -32,11 +28,9 @@ export async function planGeneration(request: GenerationRequest & { platform?: P
   safetyResult.policyVersion = policyVersion;
   if (safetyResult.decision !== 'allow') throw new SafetyPolicyViolation(safetyResult);
 
-  const requestedQuality = publicQuality(request.quality);
+  const requestedQuality: PublicGenerationQuality = publicQuality(request.quality);
   const category: FeatureCategory = request.category ?? 'social_image';
-  const route = request.operation === 'editImage'
-    ? await resolveLiveEditProviderModel(request.plan, request.quality)
-    : await resolveFeatureRoute(request.plan, category, requestedQuality);
+  const route = await resolveFeatureRoute(request.plan, category, requestedQuality);
   const plan = GENERATION_PLANS[request.plan];
   const platform = request.platform ? PLATFORM_SPECS[request.platform] : undefined;
 
@@ -51,8 +45,5 @@ export async function planGeneration(request: GenerationRequest & { platform?: P
     maxExportBytes: platform?.maxBytes ?? 8_000_000,
     safety: safetyResult,
     category,
-    requestedQuality,
-    fallbackProviderId: route.fallbackProviderId,
-    fallbackModelId: route.fallbackModelId,
   };
 }
