@@ -3,7 +3,7 @@ export type ImageAnalysisLevel = 'basic' | 'medium' | 'hard';
 export type VideoAdQuality = 'standard';
 
 export const MEDIA_FEATURES = {
-  free: { imageAnalysis: { basic: 2, medium: 0, hard: 0 }, videoAd: { standard: 10 } },
+  free: { imageAnalysis: { basic: 2, medium: 0, hard: 0 }, videoAd: { standard: 0 } },
   pro: { imageAnalysis: { basic: 2, medium: 5, hard: 10 }, videoAd: { standard: 10 } },
   business: { imageAnalysis: { basic: 2, medium: 5, hard: 10 }, videoAd: { standard: 10 } },
 } as const satisfies Record<PlanId, {
@@ -21,7 +21,7 @@ export const VIDEO_AD_LIMITS = {
 export function imageAnalysisCredits(plan: PlanId, level: ImageAnalysisLevel) { return MEDIA_FEATURES[plan].imageAnalysis[level]; }
 export function videoAdCredits(plan: PlanId, quality: VideoAdQuality, durationSeconds = VIDEO_AD_LIMITS.minDurationSeconds) {
   const base = MEDIA_FEATURES[plan].videoAd[quality];
-  return base * Math.max(1, durationSeconds / VIDEO_AD_LIMITS.minDurationSeconds);
+  return base === 0 ? 0 : base * Math.max(1, durationSeconds / VIDEO_AD_LIMITS.minDurationSeconds);
 }
 export function canUseImageAnalysis(plan: PlanId, level: ImageAnalysisLevel) { return imageAnalysisCredits(plan, level) > 0; }
 export function canUseVideoAd(plan: PlanId, quality: VideoAdQuality) { return videoAdCredits(plan, quality) > 0; }
