@@ -20,9 +20,9 @@ const platformLabels: Record<PlatformId, string> = {
   poster: 'Poster',
   website_banner: 'Website Banner',
 };
-
 const analysisLevels: ImageAnalysisLevel[] = ['basic', 'medium', 'hard'];
 const imageQualities = ['preview', 'standard', 'premium'] as const;
+const videoAspectRatios = ['16:9', '9:16', '1:1'] as const;
 
 export async function GET() {
   try {
@@ -95,6 +95,8 @@ export async function GET() {
         maxDurationSeconds: VIDEO_AD_LIMITS.maxDurationSeconds,
         audio: VIDEO_AD_LIMITS.audio,
         quality: VIDEO_AD_LIMITS.standard.maxQuality,
+        aspectRatios: videoAspectRatios,
+        aspectRatioAffectsPrice: false,
       },
     }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
