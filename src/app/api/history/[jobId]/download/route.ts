@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/server/supabase';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
+import { consumeRateLimit } from '@/server/rate-limit';
+import { logServerError } from '@/server/production-log';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +18,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ job
     const supabase = await getSupabaseServerClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const rate = await consumeRateLimit(`user:${user.id}:history-download`, 30, 60);
+    if (!rate.allowed) return NextResponse.json({ error: 'Download rate limit exceeded', retryAfterSeconds: rate.retryAfterSeconds }, { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } });
 
     const { jobId } = await params;
     const admin = getSupabaseAdmin();
@@ -38,6 +43,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ job
       },
     });
   } catch (error) {
+    logServerError('history.download_failed', error);
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to download master output' }, { status: 400 });
   }
 }
