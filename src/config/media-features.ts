@@ -19,7 +19,7 @@ export const VIDEO_AD_LIMITS = {
 } as const;
 
 export function imageAnalysisCredits(plan: PlanId, level: ImageAnalysisLevel) { return MEDIA_FEATURES[plan].imageAnalysis[level]; }
-export function videoAdCredits(plan: PlanId, quality: VideoAdQuality, durationSeconds = VIDEO_AD_LIMITS.minDurationSeconds) {
+export function videoAdCredits(plan: PlanId, quality: VideoAdQuality, durationSeconds: number = VIDEO_AD_LIMITS.minDurationSeconds) {
   const base = MEDIA_FEATURES[plan].videoAd[quality];
   return base === 0 ? 0 : base * Math.max(1, durationSeconds / VIDEO_AD_LIMITS.minDurationSeconds);
 }
