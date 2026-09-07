@@ -7,12 +7,15 @@ const COUNTRIES: Record<string,{name:string;locale:string}>={IN:{name:'India',lo
 
 async function readProfilePayload(userId:string, profile:Record<string,any>|null){
   const admin=getSupabaseAdmin();
-  const {data:subscription}=await admin.from('subscriptions').select('id,plan_id,status,provider,current_period_start,current_period_end,country_code,currency,cancel_at_period_end,created_at,updated_at').eq('user_id',userId).order('updated_at',{ascending:false}).limit(1).maybeSingle();
+  const [{data:subscription},{data:transactions}]=await Promise.all([
+    admin.from('subscriptions').select('id,plan_id,status,provider,current_period_start,current_period_end,country_code,currency,cancel_at_period_end,created_at,updated_at').eq('user_id',userId).order('updated_at',{ascending:false}).limit(1).maybeSingle(),
+    admin.from('billing_transactions').select('id,kind,status,plan_id,description,amount_minor,currency,purchased_at,period_end,receipt_url').eq('user_id',userId).order('purchased_at',{ascending:false}).limit(20),
+  ]);
   const billingCountry=subscription?.country_code||profile?.billing_country_code||profile?.country_code||'IN';
   const {data:prices}=await admin.from('plan_prices').select('plan_id,currency,unit_amount_minor').eq('country_code',billingCountry).eq('active',true);
   const primary=prices?.find((price)=>price.plan_id===profile?.plan_id)||prices?.[0];
   const planPrices=Object.fromEntries((prices??[]).map((price)=>[price.plan_id,price.unit_amount_minor]));
-  return {profile,subscription,planPrice:{currency:primary?.currency||subscription?.currency||'USD',unit_amount_minor:primary?.unit_amount_minor||0},planPrices};
+  return {profile,subscription,planPrice:{currency:primary?.currency||subscription?.currency||'USD',unit_amount_minor:primary?.unit_amount_minor||0},planPrices,transactions:transactions??[]};
 }
 
 export async function GET(request:Request){
