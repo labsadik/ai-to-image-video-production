@@ -23,6 +23,7 @@ const iconFor = (kind: string) => {
   if (kind.includes('analysis')) return ScanSearch;
   if (kind.includes('video')) return Video;
   if (kind.includes('image')) return ImageIcon;
+  if (kind.includes('expired')) return TriangleAlert;
   return Sparkles;
 };
 
@@ -39,7 +40,8 @@ function timeAgo(value: string) {
   return `${days}d ago`;
 }
 
-export function NotificationCenter({ userId }: { userId: string }) {
+export function NotificationCenter() {
+  const [userId, setUserId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,11 +50,17 @@ export function NotificationCenter({ userId }: { userId: string }) {
   useEffect(() => {
     let mounted = true;
     const supabase = getSupabaseBrowserClient();
+    void supabase.auth.getUser().then(({ data }) => { if (mounted) setUserId(data.user?.id ?? null); });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!userId) { setLoading(false); return; }
+    let mounted = true;
+    const supabase = getSupabaseBrowserClient();
+    setLoading(true);
     void supabase.from('notifications').select('id,user_id,kind,title,body,severity,metadata,read_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(30)
-      .then(({ data }) => {
-        if (mounted) setNotifications((data ?? []) as NotificationRow[]);
-        if (mounted) setLoading(false);
-      });
+      .then(({ data }) => { if (mounted) { setNotifications((data ?? []) as NotificationRow[]); setLoading(false); } });
 
     const channel = supabase
       .channel(`user-notifications:${userId}`)
@@ -68,19 +76,19 @@ export function NotificationCenter({ userId }: { userId: string }) {
       })
       .subscribe();
 
-    return () => {
-      mounted = false;
-      void supabase.removeChannel(channel);
-    };
+    return () => { mounted = false; void supabase.removeChannel(channel); };
   }, [userId]);
 
   async function markRead(id: string) {
+    if (!userId) return;
     const supabase = getSupabaseBrowserClient();
-    setNotifications((current) => current.map((item) => item.id === id ? { ...item, read_at: new Date().toISOString() } : item));
-    await supabase.from('notifications').update({ read_at: new Date().toISOString() }).eq('id', id).eq('user_id', userId);
+    const now = new Date().toISOString();
+    setNotifications((current) => current.map((item) => item.id === id ? { ...item, read_at: now } : item));
+    await supabase.from('notifications').update({ read_at: now }).eq('id', id).eq('user_id', userId);
   }
 
   async function markAllRead() {
+    if (!userId) return;
     const now = new Date().toISOString();
     const supabase = getSupabaseBrowserClient();
     setNotifications((current) => current.map((item) => item.read_at ? item : { ...item, read_at: now }));
