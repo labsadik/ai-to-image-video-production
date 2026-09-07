@@ -9,7 +9,7 @@ import { SafetyPolicyViolation } from '@/core/safety';
 import type { GenerationQuality, FeatureCategory } from '@/core/ai';
 
 export const runtime = 'nodejs';
-const categories = new Set<FeatureCategory>(['social_image', 'text_graphic']);
+const category: FeatureCategory = 'image_generation';
 
 export async function POST(request: Request) {
   try {
@@ -23,14 +23,13 @@ export async function POST(request: Request) {
     const body = await request.json() as Record<string, unknown>;
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     const quality = normalizeGenerationQuality(body.quality);
-    const category = (typeof body.category === 'string' ? body.category : 'social_image') as FeatureCategory;
     const platform = body.platform as PlatformId | undefined;
     const projectId = typeof body.projectId === 'string' ? body.projectId : undefined;
     const referenceImageStoragePaths = Array.isArray(body.referenceImageStoragePaths)
       ? body.referenceImageStoragePaths.filter((value): value is string => typeof value === 'string' && value.length > 0).slice(0, 1)
       : [];
 
-    if (!prompt || prompt.length > 8000 || !quality || !categories.has(category)) return NextResponse.json({ error: 'Invalid image generation request' }, { status: 400 });
+    if (!prompt || prompt.length > 8000 || !quality) return NextResponse.json({ error: 'Invalid image generation request' }, { status: 400 });
     if (platform && !(platform in PLATFORM_SPECS)) return NextResponse.json({ error: 'Unsupported platform' }, { status: 400 });
 
     const admin = getSupabaseAdmin();
