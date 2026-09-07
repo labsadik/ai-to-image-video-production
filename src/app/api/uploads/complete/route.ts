@@ -7,9 +7,10 @@ import { consumeRateLimit } from '@/server/rate-limit';
 import { moderateImage } from '@/server/image-moderation';
 import { createMediaPreview } from '@/lib/media/preview';
 import { compressImageForStorage, MAX_STORAGE_IMAGE_BYTES } from '@/lib/media/compressed-image';
+import { logServerError } from '@/server/production-log';
 
 export const runtime = 'nodejs';
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 6_000_000;
 const MAX_PIXELS = 60_000_000;
 
 export async function POST(request: Request) {
@@ -39,7 +40,8 @@ export async function POST(request: Request) {
     const uploadedBuffer = Buffer.from(await blob.arrayBuffer());
     if (uploadedBuffer.byteLength <= 0 || uploadedBuffer.byteLength > MAX_UPLOAD_BYTES) {
       await admin.storage.from('solamentis-assets').remove([asset.storage_path]);
-      return NextResponse.json({ error: 'Uploaded file exceeds size limits' }, { status: 422 });
+      await admin.from('assets').update({ status: 'blocked', metadata: { ...(asset.metadata ?? {}), validation_error: 'upload_size_exceeded', validated_at: new Date().toISOString() } }).eq('id', asset.id);
+      return NextResponse.json({ error: 'Uploaded file must be 6 MB or smaller' }, { status: 422 });
     }
 
     const sourceMetadata = await sharp(uploadedBuffer, { failOn: 'error' }).metadata();
@@ -50,6 +52,11 @@ export async function POST(request: Request) {
     const stored = await compressImageForStorage(uploadedBuffer, { maxBytes: MAX_STORAGE_IMAGE_BYTES });
     const checksum = createHash('sha256').update(stored.buffer).digest('hex');
     const declaredSize = Number((asset.metadata as Record<string, unknown> | null)?.declared_byte_size ?? asset.byte_size);
+    if (!Number.isSafeInteger(declaredSize) || declaredSize <= 0 || declaredSize > MAX_UPLOAD_BYTES || declaredSize !== uploadedBuffer.byteLength) {
+      await admin.storage.from('solamentis-assets').remove([asset.storage_path]);
+      await admin.from('assets').update({ status: 'blocked', metadata: { ...(asset.metadata ?? {}), validation_error: 'declared_size_mismatch', uploaded_byte_size: uploadedBuffer.byteLength, validated_at: new Date().toISOString() } }).eq('id', asset.id);
+      return NextResponse.json({ error: 'Upload size could not be validated' }, { status: 422 });
+    }
 
     const moderation = await moderateImage({
       mimeType: stored.mimeType,
@@ -73,7 +80,7 @@ export async function POST(request: Request) {
           ...(asset.metadata ?? {}),
           validated_at: new Date().toISOString(),
           uploaded_byte_size: uploadedBuffer.byteLength,
-          declared_size_matches_upload: declaredSize === uploadedBuffer.byteLength,
+          declared_size_matches_upload: true,
           stored_byte_size: stored.byteSize,
           compression_quality: stored.quality,
           moderation_decision: moderation.decision,
@@ -105,7 +112,7 @@ export async function POST(request: Request) {
         ...(asset.metadata ?? {}),
         validated_at: new Date().toISOString(),
         uploaded_byte_size: uploadedBuffer.byteLength,
-        declared_size_matches_upload: declaredSize === uploadedBuffer.byteLength,
+        declared_size_matches_upload: true,
         stored_byte_size: stored.byteSize,
         compression_quality: stored.quality,
         moderation_decision: moderation.decision,
@@ -157,10 +164,10 @@ export async function POST(request: Request) {
       decision: moderation.decision,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Upload finalization failed';
+    logServerError('uploads.complete_failed', error);
     if (cleanupPaths.length) {
       try { await getSupabaseAdmin().storage.from('solamentis-assets').remove(cleanupPaths); } catch { /* cleanup is best-effort */ }
     }
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Upload finalization failed' }, { status: 400 });
   }
 }
