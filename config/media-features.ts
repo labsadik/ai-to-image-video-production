@@ -18,9 +18,9 @@ export const VIDEO_AD_LIMITS = {
   standard: { label: 'Standard Video Clip', creditRange: '1–20', maxQuality: '720p' },
 } as const;
 
-export function imageAnalysisCredits(plan: PlanId, level: ImageAnalysisLevel) { return MEDIA_FEATURES[plan].imageAnalysis[level]; }
+export function imageAnalysisCredits(plan: PlanId, level: ImageAnalysisLevel) { return Number(MEDIA_FEATURES[plan].imageAnalysis[level]); }
 export function videoAdCredits(plan: PlanId, quality: VideoAdQuality, durationSeconds: number = VIDEO_AD_LIMITS.minDurationSeconds) {
-  const base = MEDIA_FEATURES[plan].videoAd[quality];
+  const base = Number(MEDIA_FEATURES[plan].videoAd[quality]);
   return base === 0 ? 0 : base * Math.max(1, durationSeconds / VIDEO_AD_LIMITS.minDurationSeconds);
 }
 export function canUseImageAnalysis(plan: PlanId, level: ImageAnalysisLevel) { return imageAnalysisCredits(plan, level) > 0; }
