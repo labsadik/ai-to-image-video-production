@@ -14,12 +14,82 @@ async function withProviderTimeout<T>(operation: Promise<T>, timeoutMs = PROVIDE
     return await Promise.race([
       operation,
       new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`Fal provider timed out after ${timeoutMs}ms`)), timeoutMs);
+        timer = setTimeout(() => reject(new Error(`Video provider timed out after ${timeoutMs}ms`)), timeoutMs);
       }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+function mediaUrlFromPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const root = payload as Record<string, unknown>;
+  for (const key of ['url', 'video_url', 'output_url', 'media_url']) {
+    const value = root[key];
+    if (typeof value === 'string' && value.startsWith('http')) return value;
+  }
+  const video = root.video;
+  if (video && typeof video === 'object') {
+    const obj = video as Record<string, unknown>;
+    for (const key of ['url', 'video_url']) {
+      const value = obj[key];
+      if (typeof value === 'string' && value.startsWith('http')) return value;
+    }
+  }
+  const output = root.output;
+  if (output && typeof output === 'object') return mediaUrlFromPayload(output);
+  return null;
+}
+
+function requestIdFromPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const root = payload as Record<string, unknown>;
+  for (const key of ['request_id', 'requestId', 'id']) {
+    if (typeof root[key] === 'string' && root[key]) return root[key] as string;
+  }
+  return null;
+}
+
+async function generatePixazoVideo(input: { apiKey: string; model: string; prompt: string }) {
+  const endpoint = `https://gateway.pixazo.ai/${encodeURIComponent(input.model)}/text-to-video`;
+  const response = await withProviderTimeout(fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Ocp-Apim-Subscription-Key': input.apiKey,
+    },
+    body: JSON.stringify({ prompt: input.prompt }),
+  }), 90_000);
+
+  const payload = await response.json().catch(() => null) as unknown;
+  if (!response.ok) {
+    const errorMessage = payload && typeof payload === 'object' && 'error' in payload ? JSON.stringify((payload as Record<string, unknown>).error) : `HTTP ${response.status}`;
+    throw new Error(`Pixazo video request failed: ${errorMessage}`);
+  }
+
+  const immediateUrl = mediaUrlFromPayload(payload);
+  if (immediateUrl) return immediateUrl;
+
+  const requestId = requestIdFromPayload(payload);
+  if (!requestId) throw new Error('Pixazo video provider returned neither a video URL nor a request id');
+
+  const started = Date.now();
+  while (Date.now() - started < 5 * 60_000) {
+    await new Promise(resolve => setTimeout(resolve, 5_000));
+    const statusResponse = await withProviderTimeout(fetch(`https://gateway.pixazo.ai/v2/requests/status/${encodeURIComponent(requestId)}`, {
+      headers: { 'Ocp-Apim-Subscription-Key': input.apiKey },
+    }), 30_000);
+    const statusPayload = await statusResponse.json().catch(() => null) as unknown;
+    if (!statusResponse.ok) throw new Error(`Pixazo video status request failed: HTTP ${statusResponse.status}`);
+    const url = mediaUrlFromPayload(statusPayload);
+    if (url) return url;
+    if (statusPayload && typeof statusPayload === 'object') {
+      const state = String((statusPayload as Record<string, unknown>).status ?? (statusPayload as Record<string, unknown>).state ?? '').toLowerCase();
+      if (['failed', 'error', 'cancelled'].includes(state)) throw new Error(`Pixazo video generation failed with status=${state}`);
+    }
+  }
+  throw new Error('Pixazo video generation polling timed out');
 }
 
 async function resolveProjectName(userId: string, projectId?: string | null) {
@@ -52,27 +122,34 @@ export async function processVideoAdJob(job: any) {
   if (!model) throw new Error('Video job is missing its configured model');
   if (![5, 10].includes(durationSeconds)) throw new Error('Video duration must be 5 or 10 seconds');
   if (!['16:9', '9:16', '1:1'].includes(aspectRatio)) throw new Error('Unsupported video aspect ratio');
-  const apiKey = await getProviderSecret(provider, 'FAL_KEY');
 
-  fal.config({ credentials: apiKey });
-  const result = await withProviderTimeout(fal.subscribe(model, {
-    input: {
-      prompt: job.prompt,
-      duration: durationSeconds === 10 ? '10' : '5',
-      aspect_ratio: aspectRatio as '16:9' | '9:16' | '1:1',
-      generate_audio: false,
-    },
-    logs: false,
-  }));
-  const data = result.data as { video?: { url?: string; content_type?: string; file_size?: number } };
-  const videoUrl = data.video?.url;
+  const apiKey = await getProviderSecret(provider, provider === 'pixazo_video' ? 'PIXAZO_API_KEY' : 'FAL_KEY');
+  let videoUrl: string;
+  if (provider === 'pixazo_video') {
+    videoUrl = await generatePixazoVideo({ apiKey, model, prompt: job.prompt });
+  } else if (provider === 'fal_video') {
+    fal.config({ credentials: apiKey });
+    const result = await withProviderTimeout(fal.subscribe(model, {
+      input: {
+        prompt: job.prompt,
+        duration: durationSeconds === 10 ? '10' : '5',
+        aspect_ratio: aspectRatio as '16:9' | '9:16' | '1:1',
+        generate_audio: false,
+      },
+      logs: false,
+    }));
+    const data = result.data as { video?: { url?: string; content_type?: string; file_size?: number } };
+    videoUrl = data.video?.url ?? '';
+  } else {
+    throw new Error(`Unsupported video provider: ${provider}`);
+  }
   if (!videoUrl) throw new Error('Configured video provider returned no video URL');
 
   const videoResponse = await withProviderTimeout(fetch(videoUrl), 90_000);
   if (!videoResponse.ok) throw new Error(`Video download failed: HTTP ${videoResponse.status}`);
   const downloaded = {
     buffer: Buffer.from(await videoResponse.arrayBuffer()),
-    mimeType: data.video?.content_type || videoResponse.headers.get('content-type') || 'video/mp4',
+    mimeType: videoResponse.headers.get('content-type')?.split(';')[0] || 'video/mp4',
   };
 
   const frame = await extractVideoFrame(downloaded.buffer);
@@ -101,7 +178,7 @@ export async function processVideoAdJob(job: any) {
   const { error: previewUploadError } = await admin.storage.from('solamentis-assets').upload(previewPath, preview.buffer, { contentType: preview.mimeType, upsert: true, cacheControl: '31536000, immutable' });
   if (previewUploadError) throw new Error(`Video preview storage upload failed: ${previewUploadError.message}`);
 
-  const { data: masterAsset, error: masterAssetError } = await admin.from('assets').insert({ user_id: job.user_id, project_id: job.project_id ?? null, kind: 'generated', storage_path: masterPath, mime_type: processed.mimeType, byte_size: processed.byteSize, width: dimensions.width, height: dimensions.height, status: 'ready', metadata: { job_id: job.id, media_type: 'video', provider, model, external_id: data.video?.url ?? null, duration_seconds: durationSeconds, aspect_ratio: aspectRatio, video_quality: videoQuality, resolution, audio: false, moderation_decision: moderation.decision, moderation_provider: moderation.provider, moderation_model: moderation.model, watermark_text: watermarkText, optimized_byte_size: processed.byteSize, storage_variant: 'master', preview_storage_path: previewPath, preview_byte_size: preview.byteSize } }).select('id').single();
+  const { data: masterAsset, error: masterAssetError } = await admin.from('assets').insert({ user_id: job.user_id, project_id: job.project_id ?? null, kind: 'generated', storage_path: masterPath, mime_type: processed.mimeType, byte_size: processed.byteSize, width: dimensions.width, height: dimensions.height, status: 'ready', metadata: { job_id: job.id, media_type: 'video', provider, model, external_id: videoUrl, duration_seconds: durationSeconds, aspect_ratio: aspectRatio, video_quality: videoQuality, resolution, audio: false, moderation_decision: moderation.decision, moderation_provider: moderation.provider, moderation_model: moderation.model, watermark_text: watermarkText, optimized_byte_size: processed.byteSize, storage_variant: 'master', preview_storage_path: previewPath, preview_byte_size: preview.byteSize } }).select('id').single();
   if (masterAssetError || !masterAsset) throw new Error(masterAssetError?.message ?? 'Failed to persist video asset');
 
   const { data: previewAsset, error: previewAssetError } = await admin.from('assets').insert({ user_id: job.user_id, project_id: job.project_id ?? null, kind: 'preview', storage_path: previewPath, mime_type: preview.mimeType, byte_size: preview.byteSize, width: preview.width, height: preview.height, status: 'ready', metadata: { job_id: job.id, role: 'video_preview_poster', storage_variant: 'preview', source_storage_path: masterPath, source_byte_size: processed.byteSize } }).select('id').single();
@@ -113,7 +190,7 @@ export async function processVideoAdJob(job: any) {
   const { error: finalizeError } = await admin.rpc('finalize_generation_credits', { p_user_id: job.user_id, p_amount: job.reserved_credits, p_idempotency_key: job.idempotency_key });
   if (finalizeError) throw new Error(`Credit finalization failed: ${finalizeError.message}`);
 
-  const { data: completed, error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', output_path: masterPath, external_job_id: data.video?.url ?? null, completed_at: new Date().toISOString(), request: { ...request, actualProvider: provider, actualModel: model, moderationDecision: moderation.decision, finalByteSize: processed.byteSize, masterByteSize: processed.byteSize, previewByteSize: preview.byteSize, masterStoragePath: masterPath, previewStoragePath: previewPath, audio: false, videoQuality, resolution } }).eq('id', job.id).select('*').single();
+  const { data: completed, error: completeError } = await admin.from('generation_jobs').update({ status: 'succeeded', output_path: masterPath, external_job_id: videoUrl, completed_at: new Date().toISOString(), request: { ...request, actualProvider: provider, actualModel: model, moderationDecision: moderation.decision, finalByteSize: processed.byteSize, masterByteSize: processed.byteSize, previewByteSize: preview.byteSize, masterStoragePath: masterPath, previewStoragePath: previewPath, audio: false, videoQuality, resolution } }).eq('id', job.id).select('*').single();
   if (completeError) throw new Error(`Video job completion failed: ${completeError.message}`);
   return completed ?? job;
 }
