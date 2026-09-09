@@ -19,23 +19,13 @@ async function withTimeout<T>(operation: Promise<T>, timeoutMs = DEFAULT_TIMEOUT
 function getMediaUrl(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') return null;
   const root = payload as Record<string, unknown>;
-  const direct = [root.url, root.image_url, root.output_url, root.media_url].find((value): value is string => typeof value === 'string' && value.startsWith('http'));
-  if (direct) return direct;
+  for (const key of ['url', 'image_url', 'output_url', 'media_url']) {
+    const value = root[key];
+    if (typeof value === 'string' && value.startsWith('http')) return value;
+    if (Array.isArray(value) && typeof value[0] === 'string' && value[0].startsWith('http')) return value[0];
+  }
   const output = root.output;
-  if (output && typeof output === 'object') {
-    const obj = output as Record<string, unknown>;
-    const media = obj.media_url;
-    if (Array.isArray(media) && typeof media[0] === 'string') return media[0];
-    if (typeof media === 'string') return media;
-    for (const key of ['url', 'image_url', 'output_url']) {
-      if (typeof obj[key] === 'string' && String(obj[key]).startsWith('http')) return String(obj[key]);
-    }
-  }
-  const images = root.images;
-  if (Array.isArray(images) && images[0] && typeof images[0] === 'object') {
-    const first = images[0] as Record<string, unknown>;
-    if (typeof first.url === 'string') return first.url;
-  }
+  if (output && typeof output === 'object') return getMediaUrl(output);
   return null;
 }
 
@@ -54,10 +44,7 @@ export class PixazoImageAdapter implements ProviderAdapter {
         'Content-Type': 'application/json',
         'Ocp-Apim-Subscription-Key': request.apiKey,
       },
-      body: JSON.stringify({
-        prompt: request.prompt,
-        size: `${Math.max(512, Math.min(1024, request.width))}x${Math.max(512, Math.min(1024, request.height))}`,
-      }),
+      body: JSON.stringify({ prompt: request.prompt }),
     }));
 
     const payload = await response.json().catch(() => null) as unknown;
@@ -87,10 +74,14 @@ export class PixazoImageAdapter implements ProviderAdapter {
     const started = Date.now();
     try {
       const response = await withTimeout(fetch(`https://gateway.pixazo.ai/${encodeURIComponent(model)}/text-to-image`, {
-        method: 'OPTIONS',
-        headers: { 'Ocp-Apim-Subscription-Key': apiKey },
-      }), 10_000);
-      return { ok: response.status < 500, latencyMs: Date.now() - started };
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Ocp-Apim-Subscription-Key': apiKey,
+        },
+        body: JSON.stringify({ prompt: 'health check: a simple blue circle on white background' }),
+      }), 15_000);
+      return { ok: response.ok, latencyMs: Date.now() - started, message: response.ok ? undefined : `HTTP ${response.status}` };
     } catch (error) {
       return { ok: false, latencyMs: Date.now() - started, message: error instanceof Error ? error.message : 'Pixazo health check failed' };
     }
