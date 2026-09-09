@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/server/admin';
 
+const SUPPORTED_PROTOCOLS = ['google_gemini', 'fal_video', 'pixazo_image', 'pixazo_video', 'groq_vision'];
+
 export async function GET(_request: Request, { params }: { params: Promise<{ providerId: string }> }) {
   const { admin } = await requireAdmin();
   const { providerId } = await params;
@@ -19,8 +21,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
   for (const key of allowed) if (key in body) patch[key] = body[key];
   patch.updated_at = new Date().toISOString();
 
-  if (patch.protocol && !['google_gemini', 'fal_video'].includes(String(patch.protocol))) {
-    return NextResponse.json({ error: 'Unsupported provider protocol' }, { status: 400 });
+  if (patch.protocol && !SUPPORTED_PROTOCOLS.includes(String(patch.protocol))) {
+    return NextResponse.json({ error: `Unsupported provider protocol: ${patch.protocol}` }, { status: 400 });
   }
   if (patch.timeout_ms !== undefined && (!Number.isInteger(patch.timeout_ms) || Number(patch.timeout_ms) < 5000 || Number(patch.timeout_ms) > 300000)) {
     return NextResponse.json({ error: 'timeout_ms must be between 5000 and 300000' }, { status: 400 });
