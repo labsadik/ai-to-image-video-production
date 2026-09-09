@@ -28,13 +28,15 @@ function mediaUrlFromPayload(payload: unknown): string | null {
   for (const key of ['url', 'video_url', 'output_url', 'media_url']) {
     const value = root[key];
     if (typeof value === 'string' && value.startsWith('http')) return value;
+    if (Array.isArray(value) && typeof value[0] === 'string' && value[0].startsWith('http')) return value[0];
   }
   const video = root.video;
   if (video && typeof video === 'object') {
     const obj = video as Record<string, unknown>;
-    for (const key of ['url', 'video_url']) {
+    for (const key of ['url', 'video_url', 'media_url']) {
       const value = obj[key];
       if (typeof value === 'string' && value.startsWith('http')) return value;
+      if (Array.isArray(value) && typeof value[0] === 'string' && value[0].startsWith('http')) return value[0];
     }
   }
   const output = root.output;
@@ -86,7 +88,10 @@ async function generatePixazoVideo(input: { apiKey: string; model: string; promp
     if (url) return url;
     if (statusPayload && typeof statusPayload === 'object') {
       const state = String((statusPayload as Record<string, unknown>).status ?? (statusPayload as Record<string, unknown>).state ?? '').toLowerCase();
-      if (['failed', 'error', 'cancelled'].includes(state)) throw new Error(`Pixazo video generation failed with status=${state}`);
+      if (['failed', 'error', 'cancelled'].includes(state)) {
+        const errorText = 'error' in (statusPayload as Record<string, unknown>) ? String((statusPayload as Record<string, unknown>).error ?? state) : state;
+        throw new Error(`Pixazo video generation failed with status=${state}: ${errorText}`);
+      }
     }
   }
   throw new Error('Pixazo video generation polling timed out');
