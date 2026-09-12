@@ -1,222 +1,216 @@
 # Solamentis
 
-Solamentis is a provider-independent AI creative application built with Next.js, React, Supabase, private Storage, durable generation jobs, configurable AI routing, safety checks, credits, and Stripe billing.
+**Solamentis is a private AI creative studio for making, checking, organizing, and exporting campaign media.**
 
-## Current architecture
+It gives creators and teams one place to generate images, assess whether an image may be AI-made or edited, create short silent video clips, and keep every result in a project workspace. Credits, subscriptions, private media storage, safety checks, and provider routing are part of the product—not bolted on around a chat box.
+
+> Status: an active Next.js application. The core image, authenticity-analysis, workspace, history, credit, billing, provider-routing, and worker flows are implemented. A full canvas editor, templates, and brand kits are planned rather than available today.
+
+## What Solamentis does
+
+| Need | What Solamentis does |
+| --- | --- |
+| Create visual ideas | Generate an image from a prompt at a chosen quality and platform canvas size. |
+| Check an image | Analyze an uploaded image for likely AI generation, digital editing, compositing, provenance clues, and visual artifacts. |
+| Make a motion asset | Create a short, silent 5–10 second video clip. |
+| Keep work organized | Create workspaces for clients, campaigns, products, or personal projects; link assets and history to each one. |
+| Find work later | Browse private image, video, and analysis history, preview assets, and download authorized master files. |
+| Stay in control of spend | See monthly and purchased credits, upload limits, subscriptions, regional pricing, and payment history. |
+
+## Product tour
+
+### 1. A single creative home
+
+The dashboard shows the active workspace, available credits, and shortcuts into the Media Studio. A user can begin from a prompt, inspect an image, or start a silent-video job.
+
+![Solamentis dashboard: creative studio workspace, wallet, and quick actions](https://ik.imagekit.io/xvqovhmcyr/Solamentis%20_%20AI%20Creative%20Studio%20-%20Google%20Chrome%209_12_2026%2012_22_50%20PM.png)
+
+### 2. Workspaces keep a campaign together
+
+Projects are creative workspaces, not just folders. Each can have its own name, colour, icon, platform canvas, history, and assets. Use one for a client, campaign, product launch, or personal idea.
+
+![Solamentis projects screen: workspace cards, history, and asset counts](https://ik.imagekit.io/xvqovhmcyr/Solamentis%20_%20AI%20Creative%20Studio%20-%20Google%20Chrome%209_12_2026%2012_23_05%20PM.png)
+
+### 3. Every result has a private history
+
+Generated images, analysis results, and videos appear together in history. Users can view all work or narrow it to a single workspace, so creative decisions remain traceable instead of disappearing into isolated conversations.
+
+![Solamentis media history: images, analyses, videos, and project filter](https://ik.imagekit.io/xvqovhmcyr/Solamentis%20_%20AI%20Creative%20Studio%20-%20Google%20Chrome%209_12_2026%2012_23_41%20PM.png)
+
+### 4. Create or verify media from one studio
+
+The Media Studio supports three modes:
+
+- **Image** — prompt-based image generation, with workspace and quality selection.
+- **Analysis** — upload an image and receive an authenticity assessment with confidence, possible evidence, likely editing tools, and limitations.
+- **Video** — generate a silent video clip for supported plans.
+
+Before a job runs, the interface exposes its credit cost. The server independently validates the request, reserves the credits, and finalizes or refunds them based on the outcome.
+
+![Solamentis Media Studio: image, analysis, video modes and analysis result](https://ik.imagekit.io/xvqovhmcyr/Solamentis%20_%20AI%20Creative%20Studio%20-%20Google%20Chrome%209_12_2026%2012_24_12%20PM.png)
+
+### 5. Plans and credits are visible, not mysterious
+
+Solamentis uses a credit wallet. Monthly credits come with the subscription; purchased add-on credits are stored separately. Users can compare plans, see regional prices, buy credits through Stripe Checkout, and review verified billing history.
+
+| Plan shown in the product | Monthly credits | Upload allowance | Watermark | Available creative tools |
+| --- | ---: | ---: | --- | --- |
+| Free | 5 | 2 images / month and project | Yes | Preview images and Basic analysis |
+| Starter (`pro`) | 50 | 5 images / month and project | No | Preview, Standard, Premium images; all analysis levels; silent video |
+| Growth (`business`) | 100 | 20 images / month and project | No | Same current creative tools as Starter, with higher capacity |
+
+Plan prices are supplied from the server for the user’s billing country, so this table deliberately does not hard-code an amount or currency.
+
+![Solamentis billing: Free, Starter, and Growth plans](https://ik.imagekit.io/xvqovhmcyr/Solamentis%20_%20AI%20Creative%20Studio%20-%20Google%20Chrome%209_12_2026%2012_24_25%20PM.png)
+
+### 6. Profile and plan status stay together
+
+The settings area lets a user manage their profile and see their current plan, credit balance, expiry information, and capabilities without leaving the studio.
+
+![Solamentis settings: profile information and current plan summary](https://ik.imagekit.io/xvqovhmcyr/Solamentis%20_%20AI%20Creative%20Studio%20-%20Google%20Chrome%209_12_2026%2012_24_40%20PM.png)
+
+## Supported canvases and creative limits
+
+Workspaces and image generation support ready-made canvas presets for YouTube thumbnails, Instagram posts and stories, Facebook posts and covers, Pinterest pins, LinkedIn posts, X posts, ad creative, posters, and website banners. A workspace can alternatively use a custom canvas.
+
+| Quality in the UI | Runtime tier | Credit cost |
+| --- | --- | ---: |
+| Basic | Preview | 1 |
+| Medium | Standard | 5 |
+| Ultra | Premium | 10 |
+
+Image analysis costs 2, 5, or 10 credits for Basic, Medium, or Hard respectively. Silent video is currently audio-free, supports 5–10 seconds, and is processed as a Node-based media job; its exact credit cost is returned by the live usage endpoint.
+
+## How it works
 
 ```text
-Browser
-  -> Next.js app + authenticated API routes
-  -> Supabase Auth
-  -> ownership / plan / rate-limit validation
-  -> safety policy gate
-  -> credit reservation + idempotency
-  -> generation_jobs
-  -> Supabase queue
-  -> protected worker bridge
-  -> configured provider/model
-  -> moderation + processing
-  -> private Supabase Storage
-  -> generation_outputs + History
-  -> credit finalize/refund
-
-Billing
-  Browser -> /api/billing/checkout -> Stripe Checkout
-  Stripe  -> Supabase Edge Function billing-webhook
-          -> verified billing event
-          -> subscription / transaction / credit grant updates
+Creator
+  │  selects a workspace, mode, canvas, quality, and prompt or image
+  ▼
+Next.js application + authenticated API
+  │  checks ownership, plan, quota, rate limit, safety, and idempotency
+  ▼
+Supabase
+  │  reserves credits and records a durable generation job
+  ▼
+Protected queue / worker bridge
+  │  resolves the approved provider and model from server configuration
+  ▼
+AI provider + media processing
+  │  applies moderation, previews, compression, and plan watermarking
+  ▼
+Private Supabase Storage + History
+  │  serves short-lived signed URLs only after authorization
+  ▼
+Creator sees the result, its status, and the final credit outcome
 ```
 
-The application currently uses Node.js runtime for the Next.js API routes because image processing, Sharp, FFmpeg/video processing, and the existing worker are Node-oriented. The Supabase `generation-worker` Edge Function is a protected bridge into the Next.js worker endpoint; it is not yet a fully Edge-native media-processing worker.
+### Provider configuration
 
-## Repository
+The browser never chooses an arbitrary provider or sends an API key. The server resolves feature routes from Supabase configuration by plan, feature category, and quality. The current code includes adapters or protocols for Google Gemini image work, Pixazo image generation, Groq vision analysis, and Fal/Kling-compatible silent-video routes. Provider health checks and fallback configuration support operations without changing the browser contract.
 
-GitHub: `https://github.com/WorkRCS/solamentis`
+## Technical architecture
 
-Main branch is `main`.
+- **App:** Next.js 16, React 19, TypeScript, Tailwind CSS
+- **Identity and data:** Supabase Auth, PostgreSQL, Row Level Security (RLS), Storage, RPCs, queues, and Edge Functions
+- **Media:** Sharp for image optimization/watermarks and FFmpeg for video processing
+- **Payments:** Stripe Checkout plus signed, replay-safe webhook handling
+- **Delivery:** private storage with short-lived signed asset URLs; no public media bucket is required
+- **Automation:** GitHub Actions runs dependency audit, linting, type checking, and a production build
 
-## Stack
+The Next.js worker remains a Node.js workload because its processing pipeline uses Sharp and FFmpeg. The Supabase `generation-worker` Edge Function securely bridges queued work into that worker; it is not presented as a fully Edge-native video processor.
 
-- Next.js 16 / React 19
-- TypeScript
-- Supabase Auth, PostgreSQL, Storage, RPCs and Queue
-- Google Gemini for configured image generation and image analysis routes
-- Fal.ai / Kling for configured video generation
-- Stripe Checkout + signed webhook processing
-- Sharp and FFmpeg-based media processing
-- GitHub Actions CI
+## Security and reliability
 
-Node.js 22+ is required by the project configuration.
+- Authenticated requests are scoped to the current Supabase user.
+- Server routes verify workspace, job, asset, history, and billing ownership before access.
+- Storage is private; authorized users receive short-lived signed URLs rather than permanent public URLs.
+- Credits are reserved, finalized, or refunded transactionally. Idempotency keys help prevent duplicate generation and payment effects.
+- Prompt safety checks run before generation. Uploads and generated output are moderated; blocked or review-required assets cannot receive signed download URLs.
+- Provider keys, Stripe secrets, Supabase server credentials, webhook secrets, and internal worker secrets remain server-side.
+- Billing becomes trusted only after the verified Stripe webhook is processed—not because the browser returns from Checkout.
 
-## API surface
+## Repository map
 
-The repository contains 21 Next.js API route files under `src/app/api`.
+| Location | Purpose |
+| --- | --- |
+| `src/app` | App Router pages, authenticated dashboard, marketing pages, and API routes |
+| `src/components` | Workspace, studio, history, wallet, billing, upload, and UI components |
+| `src/server` | Authorization, generation pipeline, provider configuration, media processing, safety, and rate limits |
+| `src/core` and `core` | Provider adapters, job types, and AI domain logic |
+| `src/config` | Plans, platform canvases, media features, safety policy, and provider catalog |
+| `supabase/migrations` | Ordered, authoritative database, RLS, function, trigger, and data migrations |
+| `supabase/functions` | Edge Functions for health, pricing, moderation, provider health, the generation bridge, and Stripe webhooks |
+| `workers` | Node-oriented image and video generation worker entry points |
+| `schema.sql` | Structural database-schema snapshot |
 
-| Route | Methods | Purpose |
-|---|---|---|
-| `/api/health` | GET | Application health endpoint |
-| `/api/auth/signout` | POST | Sign out and write activity/audit information |
-| `/api/profile` | GET, PATCH | Load/update the authenticated profile and activity |
-| `/api/media-usage` | GET | Live plan, credits, upload limits and media capabilities |
-| `/api/projects` | GET, POST | List and create owned creative workspaces |
-| `/api/projects/:projectId` | GET, PATCH, DELETE | Read, edit and safely delete an owned workspace |
-| `/api/assets/:assetId/signed-url` | GET | Issue a short-lived private asset URL |
-| `/api/uploads/sign` | POST | Validate upload size/plan limits and issue a signed upload URL |
-| `/api/uploads/complete` | POST | Validate, moderate, compress and persist an uploaded image |
-| `/api/generate` | POST | Validate and enqueue an image-generation job |
-| `/api/generate/:jobId` | GET | Read an owned image-generation job and signed outputs |
-| `/api/analyze-image` | POST | Run configured image authenticity analysis and persist results |
-| `/api/video-ad` | POST | Validate and enqueue a silent video generation job |
-| `/api/video-ad/:jobId` | GET | Read an owned video job and signed master/preview outputs |
-| `/api/history/:jobId` | GET, DELETE | Read or delete owned generation history and assets |
-| `/api/history/:jobId/download` | GET | Download an owned master output |
-| `/api/billing/checkout` | POST | Build server-validated Stripe plan/credit-pack Checkout sessions |
-| `/api/admin/providers/:providerId` | GET, PATCH | Admin-only provider configuration and secret rotation |
-| `/api/admin/routes/:planId/:quality` | PATCH | Admin-only AI feature routing configuration |
-| `/api/internal/generation-worker` | POST | Protected server-to-server worker execution endpoint |
-| `/api/internal/provider-health` | POST | Protected provider/model health checks |
+## API overview
 
-All user-facing API routes authenticate with Supabase Auth before reading or changing user-owned data. Internal routes use server-side secrets and are not browser APIs.
+| Area | Routes |
+| --- | --- |
+| Account and usage | `GET/PATCH /api/profile`, `GET /api/media-usage`, `POST /api/auth/signout` |
+| Workspaces | `GET/POST /api/projects`, `GET/PATCH/DELETE /api/projects/:projectId` |
+| Uploads and assets | `POST /api/uploads/sign`, `POST /api/uploads/complete`, `GET /api/assets/:assetId/signed-url` |
+| Creative work | `POST /api/generate`, `GET /api/generate/:jobId`, `POST /api/analyze-image`, `POST /api/video-ad`, `GET /api/video-ad/:jobId` |
+| History | `GET/DELETE /api/history/:jobId`, `GET /api/history/:jobId/download` |
+| Billing | `POST /api/billing/checkout` |
+| Operations | `GET /api/health`, protected generation-worker and provider-health routes |
+| Administration | Admin-only provider configuration and AI-route configuration endpoints |
 
-## Supabase
+## Run locally
 
-Current production project:
+### Requirements
 
-- Project ref: `yyeidanzflitrstvooxw`
-- URL: `https://yyeidanzflitrstvooxw.supabase.co`
-- Region: `ap-southeast-1`
-- PostgreSQL: 17.x
-- Storage bucket: `solamentis-assets`
-- Storage bucket is private.
+- Node.js 22 or newer
+- A Supabase project with the repository migrations applied
+- Server-side credentials for the providers and Stripe features you intend to enable
 
-The live database contains the application schema, RLS policies, ownership checks, credit ledger/reservation functions, idempotency guards, provider routing, pricing, safety events, billing records, and private runtime secret storage.
-
-`schema.sql` is the repository's structural schema snapshot. Ordered files in `supabase/migrations/` are authoritative for exact live DDL, policy, function, trigger and data changes.
-
-## Environment variables
-
-Do **not** create or commit a real `.env` file in GitHub. The repository intentionally ignores `.env`, `.env.local`, and other local secret files.
-
-Use `.env.example` as the template, then create `.env.local` for the Next.js application on your machine or configure the same variables in the deployment platform.
-
-### Next.js application variables
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://yyeidanzflitrstvooxw.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<Supabase publishable key>
-SUPABASE_SECRET_KEY=<server-only Supabase secret key>
-NEXT_PUBLIC_APP_URL=https://<your-real-production-domain>
-GOOGLE_AI_API_KEY=<Google AI API key>
-FAL_KEY=<Fal.ai key>
-CRON_SECRET=<long random secret>
-SOLAMENTIS_PROVENANCE_SECRET=<long random secret>
-STRIPE_SECRET_KEY=<Stripe secret key>
-STRIPE_WEBHOOK_SECRET=<Stripe webhook signing secret>
-```
-
-Never expose `SUPABASE_SECRET_KEY`, provider keys, Stripe secret keys, webhook secrets, `CRON_SECRET`, or provenance secrets to client-side code.
-
-### Supabase Edge Function variables
-
-The `generation-worker` Edge Function uses Supabase's injected `SUPABASE_URL` plus `SUPABASE_SECRET_KEY`, and also requires:
-
-```env
-SOLAMENTIS_APP_URL=https://<your-real-production-domain>
-```
-
-`SOLAMENTIS_APP_URL` points the Edge worker bridge back to the deployed Next.js application. It is a server-side/Edge secret, not a browser variable.
-
-`billing-webhook` and the other Edge Functions have their own server-side configuration. Do not copy provider credentials into browser-exposed `NEXT_PUBLIC_*` variables.
-
-## Local setup
+### Install and start
 
 ```bash
 npm install
 cp .env.example .env.local
-# fill in real values in .env.local
+# Add real values to .env.local. Never commit it.
 npm run lint
 npm run typecheck
 npm run build
 npm run dev
 ```
 
-The app runs through the normal Next.js development server. There is intentionally no manual `npm run worker` script; generation work is dispatched through the protected queue/worker architecture.
+Open the development URL reported by Next.js, usually `http://localhost:3000`.
 
-## Production API rules
+There is intentionally no manual `npm run worker` command. Generation is dispatched through the protected queue-and-worker architecture.
 
-The API layer is designed around the following invariants:
+### Environment variables
 
-1. Authenticate every browser request with Supabase Auth.
-2. Check ownership using the authenticated user ID before accessing projects, assets, jobs, billing records, or history.
-3. Keep private Storage private and return short-lived signed URLs only after authorization.
-4. Reserve and finalize/refund credits transactionally through database RPCs.
-5. Use idempotency keys on generation and payment-related operations to prevent duplicate actions.
-6. Resolve AI provider/model routing from Supabase rather than trusting browser-supplied provider choices.
-7. Apply safety checks before generation and moderation before delivering generated/uploaded media.
-8. Keep internal worker/health endpoints behind server-only secrets.
-9. Never return provider API keys, Supabase secret keys, runtime secrets, or Stripe secrets to the browser.
+Start from [`.env.example`](.env.example). At minimum, configure the Supabase URL and publishable key, a server-only Supabase secret, an application URL, the AI provider keys you use, internal worker/provenance secrets, and Stripe keys if billing is enabled.
 
-## Current provider routing
+Never expose a server secret through a `NEXT_PUBLIC_*` value. Do not commit `.env`, `.env.local`, or deployed secret values.
 
-The runtime uses `ai_feature_routes` as the source of truth for feature routing by plan, category, and quality. Providers are stored in `ai_providers`; models are stored in `ai_models`.
+## Database and deployment notes
 
-Current configured protocols include:
+- Treat `supabase/migrations/` as the source of truth for the live schema and security behavior.
+- Treat `schema.sql` as a structural snapshot, not a substitute for ordered migrations.
+- Configure Edge Function secrets in Supabase and deployment secrets in the hosting platform’s secret store.
+- Apply and verify Stripe webhook secrets before accepting paid production traffic.
+- Run a complete authenticated smoke test against the deployed application with real provider credentials before launch.
 
-- `google_gemini` for image generation and image analysis
-- `fal_video` for silent video generation
+## Current boundaries and planned work
 
-The admin routing UI/API now reads and updates the same `ai_feature_routes` table used by the runtime.
+The application intentionally does **not** claim the following as complete today:
 
-## Storage and media behavior
+- A complete editor/canvas workflow
+- Template and brand-kit workflows
+- A complete administration interface for plans, users, safety, providers, and audit history
+- Full observability dashboards, alerting, and a comprehensive automated test suite
+- A fully Edge-native media worker
 
-Uploads are compressed before persistent storage. The storage bucket accepts the application media types required by the current product, including WebP images and MP4 video masters.
+## Validation
 
-Generated media is stored using a master/preview pattern. Browser delivery uses signed URLs rather than public bucket access.
-
-## Billing behavior
-
-The billing page gets regional pricing and active products from Supabase. Checkout requests are revalidated server-side before creating a Stripe Checkout session.
-
-The trusted billing state comes from the verified Stripe webhook, not from a browser redirect. Credit grants, subscriptions, and billing transactions are persisted in Supabase.
-
-## CI
-
-GitHub Actions runs:
-
-```text
-npm install --no-audit
-npm audit --omit=dev --audit-level=high
+```bash
 npm run lint
 npm run typecheck
 npm run build
 ```
 
-Do not treat a running workflow as successful until GitHub reports a completed `success` conclusion.
-
-## Security status
-
-The database has RLS enabled across the application tables, private runtime secret access is denied to client roles, Storage is private, and duplicate/idempotency protections exist across the core generation, billing, credit and workspace flows.
-
-Supabase's current security advisor still reports one external project-level warning: leaked-password protection in Auth is disabled. That setting must be enabled in the Supabase Auth dashboard; it is not controlled by the application schema migrations.
-
-## Known architectural boundary
-
-The Next.js `generation-worker.ts` and `video-ad-worker.ts` remain Node.js workloads because they rely on Sharp/FFmpeg and the existing provider/media-processing stack. The Supabase Edge `generation-worker` function currently authenticates the queue call and bridges it to `/api/internal/generation-worker`.
-
-This means the system is automatic from the queue/trigger perspective, but media processing is not yet 100% Supabase Edge-native. A later architecture pass can move compatible processing into Deno/Edge or another managed worker runtime without changing the browser API contract.
-
-## Source-of-truth rule
-
-For database behavior, `supabase/migrations/` is authoritative.
-
-For structural documentation, `schema.sql` is the canonical snapshot.
-
-For browser/server API contracts, the route files under `src/app/api` are authoritative.
-
-For deployment secrets, use the deployment platform's secret store and Supabase Edge Function secrets. Never commit real credentials.
-
-## Current verification snapshot
-
-The current repository has the API compatibility fixes for video status handling, video storage MIME compatibility, and admin feature routing. The latest checked live Supabase state contains active provider/model configuration and a private storage bucket accepting the current image and video media types.
-
-A complete authenticated production smoke test still requires an actual deployed webapp URL plus valid production credentials/provider keys. The connected Vercel integration currently does not expose a linked project, so deployment HTTP smoke testing cannot be truthfully claimed from this environment.
+CI runs the same checks, together with a production dependency audit.

@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from 'react';
 
 export function Card({ className = '', children, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }) {
-  return <div {...props} className={`rounded-3xl border border-slate-200 bg-white shadow-[0_16px_50px_rgba(15,23,42,0.06)] ${className}`}>{children}</div>;
+  return <div {...props} className={`workspace-card rounded-3xl border border-slate-200 bg-white shadow-[0_16px_50px_rgba(15,23,42,0.06)] ${className}`}>{children}</div>;
 }
 
 export function CardHeader({ className = '', children, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }) {

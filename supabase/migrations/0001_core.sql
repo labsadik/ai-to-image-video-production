@@ -31,7 +31,7 @@ create table if not exists public.generation_jobs (
 create index if not exists generation_jobs_user_created_idx on public.generation_jobs(user_id, created_at desc);
 create index if not exists generation_jobs_status_created_idx on public.generation_jobs(status, created_at);
 
-aalter table public.profiles enable row level security;
+alter table public.profiles enable row level security;
 alter table public.generation_jobs enable row level security;
 
 create policy "profiles own row" on public.profiles for select to authenticated using ((select auth.uid()) = id);
